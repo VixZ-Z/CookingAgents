@@ -1,0 +1,61 @@
+step,true_state,observation,belief_cooking,belief_needshelp,belief_resting,action,reward,safety_fired
+0,Cooking,dropout,0.601,0.193,0.206,Keep distance,-0.1,0
+1,Cooking,zone=Fridge gesture=0 idle=0 verbal=0,0.873,0.121,0.006,Wait,0.0,0
+2,Cooking,dropout,0.641,0.218,0.142,Keep distance,-0.1,0
+3,Cooking,zone=Counter gesture=0 idle=1 verbal=0,0.514,0.357,0.129,Keep distance,-0.1,0
+4,Cooking,zone=Counter gesture=0 idle=0 verbal=0,0.828,0.168,0.005,Wait,0.0,0
+5,Cooking,zone=Counter gesture=0 idle=0 verbal=0,0.909,0.088,0.002,Wait,0.0,0
+6,Cooking,zone=Counter gesture=0 idle=0 verbal=0,0.933,0.066,0.002,Wait,0.0,0
+7,Cooking,zone=Counter gesture=0 idle=1 verbal=0,0.689,0.242,0.07,Wait,0.0,0
+8,Cooking,dropout,0.539,0.287,0.173,Keep distance,-0.1,0
+9,Cooking,zone=Stove gesture=1 idle=0 verbal=0,0.426,0.573,0.001,Ask,-3.1,0
+10,Cooking,zone=Stove gesture=0 idle=0 verbal=0,0.878,0.12,0.003,Wait,0.0,0
+11,Cooking,zone=Stove gesture=0 idle=0 verbal=0,0.966,0.032,0.002,Wait,0.0,0
+12,Cooking,zone=Stove gesture=0 idle=0 verbal=0,0.977,0.022,0.001,Wait,0.0,0
+13,NeedsHelp,zone=Counter gesture=1 idle=0 verbal=0,0.485,0.514,0.0,Ask,2.9,0
+14,Resting,zone=Chair gesture=0 idle=0 verbal=0,0.409,0.084,0.507,Keep distance,0.9,0
+15,Resting,zone=Chair gesture=0 idle=1 verbal=0,0.004,0.001,0.994,Keep distance,0.9,0
+16,Resting,dropout,0.206,0.017,0.776,Keep distance,0.9,0
+17,Resting,dropout,0.308,0.057,0.636,Keep distance,0.9,0
+18,Resting,zone=Chair gesture=0 idle=1 verbal=0,0.003,0.001,0.996,Keep distance,0.9,0
+19,Resting,zone=Chair gesture=0 idle=1 verbal=0,0.001,0.0,0.999,Keep distance,0.9,0
+20,Resting,zone=Chair gesture=0 idle=1 verbal=0,0.001,0.0,0.999,Keep distance,0.9,0
+21,Resting,zone=Chair gesture=0 idle=1 verbal=0,0.001,0.0,0.999,Keep distance,0.9,0
+22,Resting,zone=Counter gesture=0 idle=1 verbal=0,0.274,0.027,0.699,Keep distance,0.9,0
+23,Resting,zone=Chair gesture=0 idle=1 verbal=0,0.003,0.001,0.997,Keep distance,0.9,0
+24,Cooking,zone=Stove gesture=0 idle=0 verbal=0,0.957,0.007,0.036,Wait,0.0,0
+25,Cooking,zone=Stove gesture=0 idle=0 verbal=0,0.978,0.02,0.002,Wait,0.0,0
+26,Cooking,zone=Stove gesture=0 idle=0 verbal=0,0.978,0.021,0.002,Wait,0.0,0
+27,Cooking,zone=Counter gesture=0 idle=0 verbal=0,0.951,0.047,0.002,Wait,0.0,0
+28,Cooking,zone=Chair gesture=0 idle=0 verbal=0,0.546,0.023,0.431,Keep distance,-0.1,0
+29,Cooking,zone=Stove gesture=0 idle=0 verbal=0,0.975,0.018,0.007,Wait,0.0,0
+30,Cooking,zone=Table gesture=0 idle=0 verbal=0,0.948,0.012,0.04,Wait,0.0,0
+31,Cooking,dropout,0.709,0.128,0.164,Keep distance,-0.1,0
+32,Cooking,zone=Stove gesture=0 idle=0 verbal=0,0.966,0.031,0.003,Wait,0.0,0
+33,Cooking,zone=Counter gesture=0 idle=0 verbal=0,0.954,0.044,0.002,Wait,0.0,0
+34,NeedsHelp,zone=Counter gesture=1 idle=1 verbal=0,0.145,0.847,0.007,Ask,2.9,1
+35,NeedsHelp,zone=Stove gesture=0 idle=1 verbal=0,0.295,0.599,0.106,Ask,2.9,0
+36,NeedsHelp,zone=Table gesture=1 idle=1 verbal=0,0.056,0.748,0.196,Ask,2.9,0
+37,NeedsHelp,zone=Stove gesture=1 idle=0 verbal=0,0.113,0.886,0.001,Fetch,9.9,0
+38,NeedsHelp,zone=Stove gesture=1 idle=1 verbal=0,0.02,0.977,0.004,Fetch,-0.1,0
+39,Cooking,dropout,0.097,0.76,0.143,Ask,-3.1,0
+40,NeedsHelp,zone=Fridge gesture=0 idle=0 verbal=0,0.488,0.503,0.009,Ask,2.9,0
+41,Resting,zone=Chair gesture=0 idle=1 verbal=0,0.014,0.016,0.97,Keep distance,0.9,0
+42,Resting,zone=Table gesture=0 idle=1 verbal=0,0.028,0.002,0.97,Keep distance,0.9,0
+43,Resting,zone=Chair gesture=0 idle=1 verbal=0,0.001,0.0,0.998,Keep distance,0.9,0
+44,Resting,dropout,0.201,0.021,0.778,Keep distance,0.9,0
+45,Resting,zone=Chair gesture=0 idle=0 verbal=0,0.103,0.004,0.893,Keep distance,0.9,0
+46,Cooking,zone=Counter gesture=0 idle=0 verbal=0,0.939,0.032,0.029,Wait,0.0,0
+47,Cooking,zone=Counter gesture=0 idle=1 verbal=0,0.68,0.226,0.094,Wait,0.0,0
+48,Cooking,zone=Counter gesture=0 idle=0 verbal=0,0.884,0.112,0.004,Wait,0.0,0
+49,Cooking,zone=Counter gesture=0 idle=0 verbal=0,0.923,0.075,0.002,Wait,0.0,0
+50,Cooking,zone=Counter gesture=1 idle=0 verbal=0,0.41,0.59,0.0,Ask,-3.1,0
+51,Cooking,zone=Counter gesture=0 idle=0 verbal=0,0.737,0.26,0.003,Wait,0.0,0
+52,Cooking,zone=Counter gesture=0 idle=0 verbal=0,0.879,0.119,0.002,Wait,0.0,0
+53,Cooking,dropout,0.637,0.229,0.133,Keep distance,-0.1,0
+54,NeedsHelp,dropout,0.507,0.275,0.218,Keep distance,-2.1,0
+55,NeedsHelp,zone=Counter gesture=1 idle=0 verbal=0,0.234,0.765,0.001,Ask,2.9,0
+56,NeedsHelp,zone=Stove gesture=0 idle=1 verbal=0,0.389,0.518,0.093,Ask,2.9,0
+57,NeedsHelp,zone=Counter gesture=1 idle=0 verbal=0,0.136,0.863,0.0,Fetch,9.9,0
+58,NeedsHelp,zone=Counter gesture=0 idle=1 verbal=0,0.167,0.767,0.066,Fetch,-0.1,0
+59,Cooking,dropout,0.217,0.605,0.177,Ask,-3.1,0
