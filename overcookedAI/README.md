@@ -13,14 +13,17 @@ in the human's routine?
 
 ## Structure
 ```
-config.py           layout, recipes, task split, schedules, seeds, routine change
-game.py             headless logic: state, step(), orders, scoring   (Phase 2)
-logger.py           unified event/position logger (CSV/JSONL)        (done)
-agents/             base, reactive, anticipatory, scripted_human     (Phase 3-4)
-render.py           pygame drawing + keyboard input                  (Phase 5)
-run_sim.py          batch headless runs per condition                (Phase 4)
-run_participant.py  participant wrapper                              (Phase 5)
-kitchen_chaos_robot.py   legacy prototype (reference only)
+main.py             entry point / main loop (--robot, --layout, --seed)
+config.py           constants and the original station layout (pixels)
+layouts.py          selectable layouts: scripted, near, far, mixed, swap
+game.py             game logic: stations, orders, player, rules, scoring
+render.py           all pygame drawing
+robot_base.py       common robot interface
+scripted_robot/     original robot (works, scripted layout only)
+reactive_robot/     baseline robot (stub)
+anticipatory_robot/ robot.py + model.py (stubs)
+logger.py           event/position logger (not wired in yet)
+run_sim.py, run_participant.py   stubs for later phases
 ```
 
 ## Phases
@@ -33,4 +36,11 @@ kitchen_chaos_robot.py   legacy prototype (reference only)
 6. Analysis and paper
 
 ## Run
-Legacy prototype: `python kitchen_chaos_robot.py` (needs `pygame`).
+```
+pip install -r requirements.txt
+python main.py                                   # scripted robot
+python main.py --robot none --layout far         # preview a layout
+```
+Layouts: `scripted | near | far | mixed | swap`.
+Controls: WASD move, E interact, hold SPACE chop, B robot on/off, P pause,
+R restart, ESC quit.
