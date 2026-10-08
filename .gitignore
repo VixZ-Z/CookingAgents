@@ -1,0 +1,53 @@
+# ---------- Python environments ----------
+.venv/
+venv/
+env/
+ENV/
+.env
+
+# ---------- Python cache / build ----------
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.ipynb_checkpoints/
+
+# ---------- Experiment output ----------
+# Raw logs and generated results (keep small sample logs by removing the
+# line for that folder or by using `git add -f <file>`).
+logs/
+output/
+results/raw/
+*.log
+
+# Participant data: never commit personal information
+participants/
+consent/
+questionnaires_raw/
+
+# ---------- LaTeX build files ----------
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.out
+*.synctex.gz
+*.toc
+*.lof
+*.lot
+*.log
+# Uncomment if you do not want to track the compiled paper:
+# *.pdf
+
+# ---------- Editors / OS ----------
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
