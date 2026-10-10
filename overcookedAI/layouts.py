@@ -65,6 +65,9 @@ def _collab(name, onion_col, lettuce_col, description, swap_time=None):
 
 
 LAYOUTS: dict[str, Layout] = {
+    "shared": Layout("shared", "Shared kitchen: human and robot use all stations",
+                     [tuple(s) for s in C.STATIONS],
+                     C.PLAYER_START, C.ROBOT_START),
     "scripted": Layout("scripted", "Original map (scripted robot)",
                        [tuple(s) for s in C.STATIONS],
                        C.PLAYER_START, C.ROBOT_START),
