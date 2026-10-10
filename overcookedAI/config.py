@@ -9,6 +9,7 @@ GAME_TIME = 180
 
 PLAYER_SPEED = 230
 ROBOT_SPEED = 205
+ROBOT_START_DELAY = 0.5                 # seconds of game time, once per game
 PLAYER_START = (WIDTH // 2 - 20, HEIGHT // 2)
 ROBOT_START = (580, 350)
 PLAY_AREA = (0, 90, WIDTH, 505)          # x, y, w, h the agents may walk in
@@ -52,4 +53,6 @@ STATIONS = [
 ROBOT_OWNED_INDEX = 1                    # index among boards / pots / counters
 
 INGREDIENTS = {"salad": "Tomato + Lettuce", "soup": "Tomato + Onion"}
+RECIPE_INGREDIENTS = {"salad": ("tomato", "lettuce"),
+                      "soup": ("tomato", "onion")}
 ORDER_KINDS = ["salad", "soup"]

@@ -2,10 +2,10 @@
 
     python main.py                                  # scripted robot, original map
     python main.py --robot none --layout far        # preview a layout, human only
-    python main.py --robot reactive --layout mixed  # (robot not implemented yet)
+    python main.py --robot anticipatory --seed 0   # shared kitchen, salads and soups
 
 Robots : scripted | reactive | anticipatory | none
-Layouts: scripted | near | far | mixed | swap   (see layouts.py)
+Layouts: scripted | shared | near | far | mixed | swap   (see layouts.py)
 
 Controls: WASD move, E interact, hold SPACE chop, B robot on/off,
 P pause, R restart, ESC quit.
@@ -40,21 +40,28 @@ def main():
     ap.add_argument("--robot", default="scripted",
                     choices=["scripted", "reactive", "anticipatory", "none"])
     ap.add_argument("--layout", default=None, choices=LAYOUT_NAMES,
-                    help="default: scripted for the scripted robot, else near")
+                    help="default: scripted for scripted, shared for anticipatory, else near")
     ap.add_argument("--seed", type=int, default=None)
+    ap.add_argument("--recipe", choices=C.ORDER_KINDS,
+                    help="limit orders to one recipe; default includes salad and soup")
     args = ap.parse_args()
 
-    layout = args.layout or ("scripted" if args.robot == "scripted" else "near")
+    defaults = {"scripted": "scripted", "anticipatory": "shared"}
+    layout = args.layout or defaults.get(args.robot, "near")
+    recipe = args.recipe
+    if args.robot == "anticipatory":
+        if layout not in ("shared", "scripted"):
+            ap.error("the anticipatory prototype uses --layout shared or scripted")
     if args.robot == "scripted" and layout != "scripted":
         ap.error("the scripted robot only works with --layout scripted")
-    if args.robot != "scripted" and layout == "scripted" and args.robot != "none":
-        ap.error("reactive/anticipatory robots use near/far/mixed/swap layouts")
+    if args.robot == "reactive" and layout in ("scripted", "shared"):
+        ap.error("reactive robot uses near/far/mixed/swap layouts")
     robot_cls = get_robot_class(args.robot)
 
     pygame.init()
     view = View()
     clock = pygame.time.Clock()
-    state = GameState(robot_cls, args.seed, layout)
+    state = GameState(robot_cls, args.seed, layout, recipe)
     paused = False
     running = True
 
@@ -67,7 +74,7 @@ def main():
                 if event.key == pygame.K_ESCAPE:
                     running = False
                 elif event.key == pygame.K_r:
-                    state = GameState(robot_cls, args.seed, layout)
+                    state = GameState(robot_cls, args.seed, layout, recipe)
                     paused = False
                 elif event.key == pygame.K_p and not state.game_over:
                     paused = not paused

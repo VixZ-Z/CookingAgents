@@ -150,11 +150,14 @@ class View:
         s.blit(self.font.render(f"Time: {max(0, int(state.game_time))}", True, WHITE),
                (20, 45))
         x = 270
-        for o in state.orders:
+        for o in sorted(state.orders, key=lambda order: order.time_left):
             box = pygame.Rect(x, 10, 195, 60)
             pygame.draw.rect(s, (65, 65, 65), box, border_radius=8)
-            pygame.draw.rect(s, WHITE, box, 2, border_radius=8)
-            s.blit(self.small.render(o.name, True, WHITE), (box.x + 10, box.y + 8))
+            urgent = o is state.priority_order
+            pygame.draw.rect(s, YELLOW if urgent else WHITE, box, 3 if urgent else 2,
+                             border_radius=8)
+            s.blit(self.small.render(o.name + (" *" if urgent else ""), True, WHITE),
+                   (box.x + 10, box.y + 8))
             remain = self.small.render(f"{int(o.time_left)}s", True,
                                        YELLOW if o.time_left < 10 else WHITE)
             s.blit(remain, (box.right - remain.get_width() - 10, box.y + 8))
@@ -181,6 +184,24 @@ class View:
             s.blit(hint, (C.WIDTH - hint.get_width() - 20, C.HEIGHT - 32))
 
     # -- frame ----------------------------------------------------------
+    def anticipation(self, robot):
+        """Visible intentions for the shared-kitchen pilot."""
+        intent = getattr(robot, "intent", None)
+        if intent and intent.goal:
+            pygame.draw.rect(self.screen, BLUE, intent.goal.rect.inflate(10, 10), 2,
+                             border_radius=8)
+        task = getattr(robot, "task", None)
+        if task:
+            pygame.draw.rect(self.screen, (48, 176, 180), task.station.rect.inflate(16, 16),
+                             2, border_radius=8)
+        navigator = getattr(robot, "navigator", None)
+        if navigator and navigator.path:
+            points = [robot.rect.center] + [tuple(p) for p in navigator.path]
+            pygame.draw.lines(self.screen, (48, 176, 180), False, points, 2)
+        if intent and intent.velocity.length() > 20:
+            point = tuple(round(v) for v in intent.projected_position)
+            pygame.draw.circle(self.screen, BLUE, point, 10, 2)
+
     def draw(self, state, target, paused=False):
         s = self.screen
         s.fill(FLOOR)
@@ -192,6 +213,7 @@ class View:
             self.station(st)
         robot = state.robot
         if robot:
+            self.anticipation(robot)
             self.robot(robot)
         self.player(state.player)
         self.hud(state)
@@ -203,7 +225,14 @@ class View:
         info = [status,
                 "Turquoise = robot, blue = yours, purple = shared",
                 f"Layout: {state.layout.name} | R: restart | ESC: exit"]
+        if robot and getattr(robot, "intent", None):
+            info[1] = getattr(robot, "cooperation_description", robot.intent.description)
+            order = state.priority_order
+            info[2] = (f"Priority: {order.name} ({order.time_left:.0f}s) | yellow order *"
+                       if order else "Waiting for the next order")
         for i, line in enumerate(info):
+            while self.small.size(line)[0] > C.WIDTH - 585:
+                line = line[:-4] + "..."
             s.blit(self.small.render(line, True, DARK), (570, 610 + i * 24))
 
         if paused or state.game_over:

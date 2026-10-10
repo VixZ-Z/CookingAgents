@@ -162,8 +162,9 @@ def interact(actor, station, state):
             station.ready = False
     elif station.kind == "serve":
         if actor.carrying in ("salad", "soup"):
-            order = next((o for o in state.orders
-                          if o.kind == actor.carrying), None)
+            order = min((o for o in state.orders
+                         if o.kind == actor.carrying and o.time_left > 0),
+                        key=lambda o: o.time_left, default=None)
             if order is None:
                 return              # keep the dish until a matching order
             state.orders.remove(order)
@@ -176,8 +177,11 @@ def interact(actor, station, state):
 # ----------------------------------------------------------------------
 class GameState:
     def __init__(self, robot_cls=None, seed: int | None = None,
-                 layout: str = "scripted"):
+                 layout: str = "scripted", recipe: str | None = None):
+        if recipe is not None and recipe not in C.ORDER_KINDS:
+            raise ValueError(f"Unknown recipe: {recipe}")
         self.rng = random.Random(seed)
+        self.order_kinds = [recipe] if recipe else C.ORDER_KINDS
         self.layout = get_layout(layout)
         self.swapped = False
         self.stations = [
@@ -190,14 +194,26 @@ class GameState:
         self.game_time = float(C.GAME_TIME)
         self.order_timer = 0.0
         self.game_over = False
-        for _ in range(C.INITIAL_ORDERS):
-            self.add_order()
+        # Mixed-mode teammate starts with both recipes visible, then random orders.
+        initial_kinds = []
+        if (recipe is None and robot_cls
+                and getattr(robot_cls, "ensure_mixed_orders", False)):
+            initial_kinds = list(self.order_kinds)
+            self.rng.shuffle(initial_kinds)
+        for index in range(C.INITIAL_ORDERS):
+            self.add_order(initial_kinds[index] if index < len(initial_kinds) else None)
         self.robot = robot_cls(self) if robot_cls else None
 
-    def add_order(self):
+    def add_order(self, kind=None):
         if len(self.orders) < C.MAX_ORDERS:
-            self.orders.append(Order(self.rng.choice(C.ORDER_KINDS),
+            self.orders.append(Order(kind or self.rng.choice(self.order_kinds),
                                      self.rng.uniform(*C.ORDER_TTL)))
+
+    @property
+    def priority_order(self):
+        """Earliest deadline; list order breaks equal-deadline ties."""
+        return min((o for o in self.orders if o.time_left > 0),
+                   key=lambda o: o.time_left, default=None)
 
     @property
     def elapsed(self) -> float:
@@ -223,7 +239,10 @@ class GameState:
         """Advance the game by dt seconds. `move` = (dx, dy) input."""
         if self.game_over:
             return
-        self.player.update(dt, move, [s.rect for s in self.stations])
+        obstacles = [s.rect for s in self.stations]
+        if self.robot and getattr(self.robot, "avoids_human", False):
+            obstacles.append(self.robot.rect)
+        self.player.update(dt, move, obstacles)
         target = interaction_target(self.player, self.stations)
         if (chopping and target and target.kind == "board"
                 and chop_name(target.held)):
