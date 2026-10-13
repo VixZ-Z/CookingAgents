@@ -17,6 +17,7 @@ import pygame
 import config as C
 from game import GameState, interaction_target
 from layouts import LAYOUT_NAMES
+from logger import RunRecorder
 from render import View
 
 
@@ -44,6 +45,11 @@ def main():
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--recipe", choices=C.ORDER_KINDS,
                     help="limit orders to one recipe; default includes salad and soup")
+    ap.add_argument("--participant", default="dev",
+                    help="participant id, used in the log file name")
+    ap.add_argument("--condition", default="",
+                    help="free label for the experiment condition, e.g. fixed_h")
+    ap.add_argument("--no-log", action="store_true", help="do not write logs")
     args = ap.parse_args()
 
     defaults = {"scripted": "scripted", "anticipatory": "shared"}
@@ -62,6 +68,12 @@ def main():
     view = View()
     clock = pygame.time.Clock()
     state = GameState(robot_cls, args.seed, layout, recipe)
+    recorder = RunRecorder(
+        {"participant": args.participant,
+         "condition": args.condition or "default", "robot": args.robot,
+         "recipe": recipe or "mixed", "seed": args.seed},
+        enabled=not args.no_log)
+    recorder.start(state)
     paused = False
     running = True
 
@@ -74,7 +86,9 @@ def main():
                 if event.key == pygame.K_ESCAPE:
                     running = False
                 elif event.key == pygame.K_r:
+                    recorder.finish(state, completed=state.game_over)
                     state = GameState(robot_cls, args.seed, layout, recipe)
+                    recorder.start(state)
                     paused = False
                 elif event.key == pygame.K_p and not state.game_over:
                     paused = not paused
@@ -87,10 +101,15 @@ def main():
             keys = pygame.key.get_pressed()
             move = (keys[pygame.K_d] - keys[pygame.K_a],
                     keys[pygame.K_s] - keys[pygame.K_w])
+            recorder.before(state)
             state.update(dt, move, keys[pygame.K_SPACE])
+            recorder.after(state, dt)
+            if state.game_over:
+                recorder.finish(state, completed=True)
 
         view.draw(state, interaction_target(state.player, state.stations), paused)
 
+    recorder.finish(state, completed=state.game_over)
     pygame.quit()
 
 
