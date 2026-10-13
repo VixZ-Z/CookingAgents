@@ -1,6 +1,6 @@
 # Changes made to CookingAgents
 
-Status as of 10 October 2026. This document describes the features added while
+Status as of 13 October 2026. This document describes the features added while
 developing the human–robot collaboration prototype in `overcookedAI/`.
 
 ## 1. Shared kitchen and anticipatory agent
@@ -56,8 +56,10 @@ model.
 The robot predicts the most frequent starter ingredient, using the most recently
 observed choice to break ties. Once an order is completed, regardless of who
 served the dish, it can start preparing its part of the next most urgent order
-even while the human stands still. It leaves the predicted human contribution
-to the human, while making use of ingredients already delivered to the kitchen.
+even while the human stands still. While the human remains active, it leaves the
+predicted human contribution to them and uses ingredients already delivered to
+the kitchen. After the inactivity timeout described below, it can complete the
+whole order itself.
 
 The ingredient actually carried by the human overrides the forecast. After an
 incorrect prediction, the robot changes the division of work, stores its extra
@@ -128,9 +130,11 @@ python main.py --robot anticipatory --recipe soup --seed 0
 | `overcookedAI/tests/` | Behavioural tests that run without opening a window. |
 | `README.md`, `overcookedAI/README.md` | Documentation of the structure, setup, and current features. |
 
-The latest code verification passed all **53 tests**. These cover complete salad
+The latest code verification passed all **65 tests**. These cover complete salad
 and soup preparation, a moving human, changes in priority and division of work,
-incorrect forecasts, collisions, startup after 0.5 seconds, and restart.
+incorrect forecasts, collisions, startup after 0.5 seconds, and restart. Additional
+checks cover the 5-second inactivity threshold, activity resets, autonomous order
+completion, consecutive orders, separate pot batches, and returning to cooperation.
 Program startup, rendering without a window, and the original scripted robot's
 behaviour were also checked.
 
@@ -158,3 +162,27 @@ python -B -m unittest discover -s tests -v
 The forgetting factor has intentionally been left out for now. Collaboration
 between two bots and separate work areas remain optional extensions. The
 `sense-think-act/` project was not modified as part of the changes described here.
+
+## 10. Autonomous takeover after human inactivity (13 October 2026)
+
+- Added `HUMAN_IDLE_TIMEOUT = 5.0` in `overcookedAI/config.py`.
+- The robot tracks game time since the last human activity. Movement attempts,
+  E interactions, and actual chopping register activity in `GameState`; observed
+  position and carried-item changes also reset the robot's timer.
+- After 5 seconds of inactivity, the robot completes the most urgent pending
+  order, including work previously reserved for the human, then moves on to the
+  next order if the human remains inactive.
+- Existing ingredients are reused. Items held by an inactive human are excluded
+  from the robot's available inventory, so it can fetch its own missing portion.
+- Soup preparation focuses on one pot at a time, preventing ingredients split
+  across different pots from being mistaken for one complete batch.
+- Inferred human destinations no longer reserve stations during takeover.
+  Physical collision avoidance and access checks remain in effect.
+- Resumed human activity immediately restores cooperative planning. A conflicting
+  robot ingredient can be stored and its board cleared as the roles change.
+- The bottom panel displays `Human idle`, the inactivity duration, and the current
+  recipe. The original 0.5-second startup delay still applies.
+- Inactivity uses game time: pausing does not advance the timer. Autonomous work
+  does not train the human starter-choice model.
+- Added `overcookedAI/tests/test_inactivity.py` with 12 behavioural tests and
+  adjusted earlier cooperative tests to simulate an active human where appropriate.

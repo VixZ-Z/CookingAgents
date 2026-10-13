@@ -10,6 +10,7 @@ GAME_TIME = 180
 PLAYER_SPEED = 230
 ROBOT_SPEED = 205
 ROBOT_START_DELAY = 0.5                 # seconds of game time, once per game
+HUMAN_IDLE_TIMEOUT = 5.0                # seconds before the robot takes over missing work
 PLAYER_START = (WIDTH // 2 - 20, HEIGHT // 2)
 ROBOT_START = (580, 350)
 PLAY_AREA = (0, 90, WIDTH, 505)          # x, y, w, h the agents may walk in

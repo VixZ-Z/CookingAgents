@@ -1,7 +1,7 @@
 """Shared-kitchen teammate: anticipate complementary work for the earliest deadline.
 
 Observable goals override learned starter frequencies. No full action-sequence
-learning, forgetting or h yet.
+learning, forgetting or h yet. Human inactivity triggers autonomous completion.
 """
 from __future__ import annotations
 
@@ -45,6 +45,11 @@ class AnticipatoryRobot(RobotBase):
         self.contribution_source = None
         self.routine_prediction = None
         self.stow_for_reassignment = False
+        self.autonomous = False
+        self.autonomous_pot = None
+        self.human_idle_seconds = 0.0
+        self.last_human_activity = state.elapsed
+        self.previous_human_state = self._human_state(state)
         self.status = f"Starting in {C.ROBOT_START_DELAY:.1f}s"
         self.completed_salads = 0
         self.completed_soups = 0
@@ -57,6 +62,30 @@ class AnticipatoryRobot(RobotBase):
     def ingredients(self):
         return C.RECIPE_INGREDIENTS.get(self.recipe, ())
 
+    @staticmethod
+    def _human_state(state):
+        return (state.player.rect.center, state.player.carrying,
+                state.human_activity_revision)
+
+    def _update_activity(self, dt, state):
+        human_state = self._human_state(state)
+        now = state.elapsed + dt
+        if human_state != self.previous_human_state:
+            self.last_human_activity = now
+        self.previous_human_state = human_state
+        self.human_idle_seconds = max(0.0, now - self.last_human_activity)
+        autonomous = self.human_idle_seconds >= C.HUMAN_IDLE_TIMEOUT - 1e-9
+        if autonomous != self.autonomous:
+            self.autonomous = autonomous
+            self.task = None
+            self.human_ingredient = None
+            self.contribution_source = None
+            self.routine_prediction = None
+            self.autonomous_pot = None
+            if autonomous:
+                self.stow_for_reassignment = False
+                self.reassigned_board = None
+
     def _near_human(self, station, state):
         distance = pygame.Vector2(state.player.rect.center).distance_to(approach_point(station))
         return distance < 72
@@ -64,7 +93,7 @@ class AnticipatoryRobot(RobotBase):
     def _choose_station(self, stations, state):
         candidates = [s for s in stations if s.owner in (None, "shared", "robot")
                       and not self._near_human(s, state)
-                      and not (self.intent and s is self.intent.goal)]
+                      and not (not self.autonomous and self.intent and s is self.intent.goal)]
         return min(candidates, key=lambda s: pygame.Vector2(self.rect.center).distance_to(
             approach_point(s))) if candidates else None
 
@@ -77,9 +106,13 @@ class AnticipatoryRobot(RobotBase):
 
     def _inventory(self, state):
         items = [s.held for s in self._surfaces(state)]
-        items += [state.player.carrying, self.carrying]
+        items.append(self.carrying)
+        if not self.autonomous:
+            items.append(state.player.carrying)
         if self.recipe == "soup":
-            items += [item for s in state.stations if s.kind == "pot" for item in s.contents]
+            pots = ([self.autonomous_pot] if self.autonomous and self.autonomous_pot
+                    else [s for s in state.stations if s.kind == "pot"])
+            items += [item for pot in pots for item in pot.contents]
         return items
 
     def _observe_contribution(self, state):
@@ -90,7 +123,7 @@ class AnticipatoryRobot(RobotBase):
             ingredient = self.intent.ingredient if self.intent else None
             source = "movement"
         if ingredient in self.ingredients:
-            if ingredient != self.human_ingredient:
+            if ingredient != self.human_ingredient and not self.autonomous:
                 # Human behaviour overrides the forecast, including a task in flight.
                 self.task = None
                 if self.carrying and ingredient_name(self.carrying) == ingredient:
@@ -122,6 +155,9 @@ class AnticipatoryRobot(RobotBase):
 
     @property
     def cooperation_description(self):
+        if self.autonomous:
+            return (f"Human idle: {self.human_idle_seconds:.1f}s | completing {self.recipe}"
+                    if self.recipe else "Human idle | waiting for orders")
         if self.contribution_source == "routine" and self.routine_prediction:
             return self.routine_prediction.description
         if self.contribution_source == "default":
@@ -135,6 +171,11 @@ class AnticipatoryRobot(RobotBase):
                           "Leaving " + self.carrying + " on a counter")
 
     def _soup_pot(self, item, state):
+        if self.autonomous:
+            pot = self._autonomous_soup_pot(state)
+            if pot and not pot.ready and len(pot.contents) < 2 and item not in pot.contents:
+                return self._choose_station([pot], state)
+            return None
         pots = [s for s in state.stations if s.kind == "pot" and not s.ready
                 and len(s.contents) < 2 and item not in s.contents
                 and set(s.contents) <= {"chopped_tomato", "chopped_onion"}]
@@ -178,7 +219,7 @@ class AnticipatoryRobot(RobotBase):
     def _plate_task(self, state, soup=False):
         inventory = self._inventory(state)
         plate_items = ("plate",) if soup else ("plate", "plated_tomato", "plated_lettuce")
-        if state.player.carrying in plate_items:
+        if not self.autonomous and state.player.carrying in plate_items:
             return None
         target = self._choose_station([s for s in self._surfaces(state) if s.held == "plate"], state)
         if target:
@@ -243,9 +284,71 @@ class AnticipatoryRobot(RobotBase):
                 return self._pick(target, "take", item, "Collecting " + item[8:] + " for soup")
         return self._prepare_complement(state)
 
+    def _autonomous_soup_pot(self, state):
+        if self.autonomous_pot:
+            return self.autonomous_pot
+        pots = [s for s in state.stations if s.kind == "pot"
+                and set(s.contents) <= {"chopped_tomato", "chopped_onion"}]
+        # Finish an accessible pot first and keep one batch's inventory separate.
+        for size in (2, 1, 0):
+            target = self._choose_station([s for s in pots if len(s.contents) == size], state)
+            if target:
+                self.autonomous_pot = target
+                return target
+        return None
+
+    def _autonomous_task(self, state):
+        surfaces = self._surfaces(state)
+        finished = self._choose_station([s for s in surfaces if s.held == self.recipe], state)
+        if finished:
+            return self._pick(finished, "take", self.recipe, "Collecting our " + self.recipe)
+        if self.recipe == "soup":
+            pot = self._autonomous_soup_pot(state)
+            if pot is None:
+                return None
+            if len(pot.contents) == 2:
+                return self._plate_task(state, soup=True)
+            needed = [name for name in self.ingredients if "chopped_" + name not in pot.contents]
+            for name in needed:
+                target = self._choose_station(
+                    [s for s in surfaces if s.held == "chopped_" + name], state)
+                if target:
+                    return self._pick(target, "take", target.held, "Collecting " + name + " for soup")
+        else:
+            held = [s.held for s in surfaces]
+            for name in self.ingredients:
+                other = next(n for n in self.ingredients if n != name)
+                if "chopped_" + other in held:
+                    target = self._choose_station(
+                        [s for s in surfaces if s.held == "plated_" + name], state)
+                    if target:
+                        return self._pick(target, "take", target.held, "Finishing our salad")
+            needed = [name for name in self.ingredients
+                      if not any(item in held for item in ("chopped_" + name, "plated_" + name))]
+        inventory = self._inventory(state)
+        for name in needed:
+            target = self._choose_station([s for s in surfaces if s.held == name], state)
+            if target:
+                action = "chop" if target.kind == "board" else "take"
+                return self._pick(target, action, name, "Preparing existing " + name)
+        for name in needed:
+            if any(item in inventory for item in (name, "chopped_" + name, "plated_" + name)):
+                continue
+            board = self._choose_station(
+                [s for s in surfaces if s.kind == "board" and s.held is None], state)
+            if board:
+                target = self._choose_station(
+                    [s for s in state.stations if s.kind == "crate_" + name], state)
+                return self._pick(target, "fetch", name, "Taking over: prepare " + name)
+        if self.recipe == "salad" and not needed:
+            return self._plate_task(state)
+        return None
+
     def _plan(self, state):
         if self.carrying:
             return self._carried_task(state)
+        if self.autonomous:
+            return self._autonomous_task(state) if self.recipe else None
         if self.reassigned_board:
             board = self.reassigned_board
             if board.held and (ingredient_name(board.held) == self.human_ingredient
@@ -283,7 +386,8 @@ class AnticipatoryRobot(RobotBase):
                 return False
             items = self._inventory(state)
             if task.item != "plate":
-                return (task.item in self.ingredients and task.item != self.human_ingredient
+                return (task.item in self.ingredients
+                        and (self.autonomous or task.item != self.human_ingredient)
                         and not any(item in items for item in (
                             task.item, "chopped_" + task.item, "plated_" + task.item)))
             unavailable = ("plate",) if self.recipe == "soup" else (
@@ -344,7 +448,9 @@ class AnticipatoryRobot(RobotBase):
             self.human_ingredient = None
             self.contribution_source = None
             self.routine_prediction = None
+            self.autonomous_pot = None
         self.intent = self.model.observe(state, dt)
+        self._update_activity(dt, state)
         if not self.enabled:
             return
         self._observe_contribution(state)
@@ -361,7 +467,9 @@ class AnticipatoryRobot(RobotBase):
             self.task = self._plan(state)
         if self.task is None:
             names = " or ".join(self.ingredients)
-            if self.contribution_source in ("routine", "default"):
+            if self.autonomous and self.recipe:
+                self.status = "Human idle: waiting for station access"
+            elif self.contribution_source in ("routine", "default"):
                 self.status = "Waiting for your " + self.human_ingredient + " or station access"
             else:
                 self.status = "Priority " + self.recipe + ": waiting for " + names if self.recipe else "Waiting for orders"
@@ -369,7 +477,7 @@ class AnticipatoryRobot(RobotBase):
             return
         task, st = self.task, self.task.station
         self.status = task.label
-        if self._near_human(st, state) or st is self.intent.goal:
+        if self._near_human(st, state) or (not self.autonomous and st is self.intent.goal):
             self.status = "Giving you access to " + st.label
             self._yield(state, dt)
             return

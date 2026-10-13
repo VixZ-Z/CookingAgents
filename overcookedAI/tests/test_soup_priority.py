@@ -30,9 +30,10 @@ class SoupPriorityTests(unittest.TestCase):
     def stations(self, kind):
         return [s for s in self.state.stations if s.kind == kind]
 
-    def tick(self, seconds):
-        for _ in range(round(seconds / DT)):
-            self.state.update(DT, (0, 0), False)
+    def tick(self, seconds, human_active=False):
+        for step in range(round(seconds / DT)):
+            move = (1 if (step // 15) % 2 == 0 else -1, 0) if human_active else (0, 0)
+            self.state.update(DT, move, False)
             robot = self.state.robot
             self.assertFalse(robot.rect.colliderect(self.state.player.rect))
             self.assertFalse(any(robot.rect.colliderect(s.rect) for s in self.state.stations))
@@ -104,7 +105,7 @@ class SoupPriorityTests(unittest.TestCase):
         self.complete_soup("tomato")
         self.assertEqual(self.state.priority_order.kind, "salad")
         self.state.player.carrying = "lettuce"
-        self.tick(12)
+        self.tick(12, human_active=True)
         counter = next(s for s in self.stations("counter") if s.held is None)
         self.state.player.carrying = "chopped_lettuce"
         place(self.state.player, approach_point(counter))
@@ -117,7 +118,7 @@ class SoupPriorityTests(unittest.TestCase):
 
     def test_human_can_deliver_straight_to_partial_pot(self):
         self.state.player.carrying = "tomato"
-        self.tick(12)
+        self.tick(12, human_active=True)
         pot = next(s for s in self.stations("pot") if "chopped_onion" in s.contents)
         self.state.player.carrying = "chopped_tomato"
         place(self.state.player, approach_point(pot))
@@ -213,7 +214,7 @@ class SoupPriorityTests(unittest.TestCase):
     def complete_soup(self, ingredient):
         complement = "onion" if ingredient == "tomato" else "tomato"
         self.state.player.carrying = ingredient
-        self.tick(12)
+        self.tick(12, human_active=True)
         self.assertTrue(any("chopped_" + complement in s.contents for s in self.stations("pot")))
         self.assertEqual(self.state.robot.completed_soups, 0)
         counter = next(s for s in self.stations("counter") if s.held is None)
@@ -221,7 +222,10 @@ class SoupPriorityTests(unittest.TestCase):
         place(self.state.player, approach_point(counter))
         self.state.player_interact()
         place(self.state.player, (80, 350))
-        self.tick(25)
+        for _ in range(750):
+            self.tick(DT)
+            if self.state.robot.completed_soups:
+                break
         self.assertEqual(self.state.robot.completed_soups, 1)
         self.assertGreater(self.state.score, 0)
 

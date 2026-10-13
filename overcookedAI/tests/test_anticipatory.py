@@ -32,17 +32,17 @@ class AnticipatoryTests(unittest.TestCase):
     def stations(self, kind):
         return [s for s in self.state.stations if s.kind == kind]
 
-    def tick(self, seconds=1):
-        for _ in range(round(seconds / DT)):
-            self.state.update(DT, (0, 0), False)
+    def tick(self, seconds=1, human_active=False):
+        for step in range(round(seconds / DT)):
+            move = (1 if (step // 15) % 2 == 0 else -1, 0) if human_active else (0, 0)
+            self.state.update(DT, move, False)
             self.assertFalse(self.state.robot.rect.colliderect(self.state.player.rect))
             self.assertFalse(any(self.state.robot.rect.colliderect(s.rect) for s in self.state.stations))
 
-    def test_idle_robot_prepares_complement_without_finishing_the_meal(self):
-        self.tick(15)
+    def test_idle_robot_starts_complement_before_takeover(self):
+        self.tick(DT)
         self.assertEqual(self.state.robot.human_ingredient, "tomato")
-        self.assertTrue(any(s.held in ("chopped_lettuce", "plated_lettuce")
-                            for s in self.state.stations))
+        self.assertEqual(self.state.robot.task.item, "lettuce")
         self.assertEqual(self.state.score, 0)
         self.assertIsNone(self.state.robot.model.predict_start("salad"))
 
@@ -164,10 +164,10 @@ class AnticipatoryTests(unittest.TestCase):
 
     def _complete_salad(self, ingredient):
         completed_before = self.state.robot.completed_salads
-        # Human starts a raw ingredient and pauses: robot prepares the complement early.
+        # An active human handles a raw ingredient while the robot prepares the other.
         place(self.state.player, (80, 350))
         self.state.player.carrying = ingredient
-        self.tick(12)
+        self.tick(12, human_active=True)
         complement = "lettuce" if ingredient == "tomato" else "tomato"
         prepared = [s.held for s in self.state.stations] + [self.state.robot.carrying]
         self.assertTrue(any(item in ("chopped_" + complement, "plated_" + complement)

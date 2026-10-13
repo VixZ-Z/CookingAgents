@@ -30,9 +30,10 @@ class RoutinePredictionTests(unittest.TestCase):
     def stations(self, kind):
         return [s for s in self.state.stations if s.kind == kind]
 
-    def tick(self, seconds):
-        for _ in range(round(seconds / DT)):
-            self.state.update(DT, (0, 0), False)
+    def tick(self, seconds, human_active=False):
+        for step in range(round(seconds / DT)):
+            move = (1 if (step // 15) % 2 == 0 else -1, 0) if human_active else (0, 0)
+            self.state.update(DT, move, False)
             robot = self.state.robot
             self.assertFalse(robot.rect.colliderect(self.state.player.rect))
             self.assertFalse(any(robot.rect.colliderect(s.rect) for s in self.state.stations))
@@ -98,14 +99,17 @@ class RoutinePredictionTests(unittest.TestCase):
         self.assertEqual((prediction.ingredient, prediction.matches, prediction.observations),
                          ("lettuce", 2, 4))
 
-    def test_autonomous_preparation_stops_at_the_robot_contribution(self):
+    def test_forecast_leaves_human_work_before_the_idle_timeout(self):
         for recipe, complement in (("salad", "lettuce"), ("soup", "onion")):
             with self.subTest(recipe=recipe):
                 self.setUp()
                 self.record_start(recipe, "tomato")
                 self.state.orders = [Order(recipe, 100)]
-                self.tick(25)
-                self.assertTrue(self.prepared(complement))
+                self.tick(4)
+                items = [s.held for s in self.state.stations] + [self.state.robot.carrying]
+                self.assertTrue(any(item in items for item in
+                                    (complement, "chopped_" + complement, "plated_" + complement)))
+                self.assertFalse(self.state.robot.autonomous)
                 self.assertIsNone(self.state.player.carrying)
                 self.assertEqual(self.state.robot.completed_salads, 0)
                 self.assertEqual(self.state.robot.completed_soups, 0)
@@ -119,7 +123,7 @@ class RoutinePredictionTests(unittest.TestCase):
                 self.setUp()
                 self.state.orders = [Order(recipe, 90), Order(recipe, 120)]
                 self.state.player.carrying = "tomato"
-                self.tick(12)
+                self.tick(12, human_active=True)
                 counter = next(s for s in self.stations("counter") if s.held is None)
                 self.state.player.carrying = "chopped_tomato"
                 place(self.state.player, approach_point(counter))
@@ -131,9 +135,9 @@ class RoutinePredictionTests(unittest.TestCase):
                         break
                 self.assertEqual(len(self.state.orders), 1)
                 self.assertIsNone(self.state.player.carrying)
-                self.tick(15)
-                self.assertTrue(self.prepared(complement), self.state.robot.status)
-                self.assertEqual(self.state.robot.contribution_source, "routine")
+                self.tick(DT)
+                self.assertIsNotNone(self.state.robot.task)
+                self.assertEqual(self.state.robot.task.recipe, recipe)
                 self.assertEqual(self.state.robot.completed_salads + self.state.robot.completed_soups, 1)
 
     def test_after_human_serving_robot_also_starts_the_next_order(self):
@@ -166,7 +170,7 @@ class RoutinePredictionTests(unittest.TestCase):
                 break
         self.assertEqual(self.state.robot.carrying, "lettuce")
         self.state.player.carrying = "lettuce"
-        self.tick(15)
+        self.tick(15, human_active=True)
         self.assertTrue(any(s.held == "lettuce" for s in self.stations("counter")))
         self.assertTrue(self.prepared("tomato"), self.state.robot.status)
         self.assertEqual(self.state.robot.human_ingredient, "lettuce")
@@ -176,7 +180,10 @@ class RoutinePredictionTests(unittest.TestCase):
         place(self.state.player, approach_point(counter))
         self.state.player_interact()
         place(self.state.player, (80, 350))
-        self.tick(15)
+        for _ in range(450):
+            self.tick(DT)
+            if self.state.robot.completed_salads:
+                break
         self.assertEqual(self.state.robot.completed_salads, 1)
 
     def test_wrong_forecast_releases_robot_board_for_human_ingredient(self):
@@ -189,7 +196,7 @@ class RoutinePredictionTests(unittest.TestCase):
         board = self.state.robot.own_board
         self.assertIsNotNone(board)
         self.state.player.carrying = "lettuce"
-        self.tick(12)
+        self.tick(12, human_active=True)
         self.assertNotEqual(board.held, "lettuce")
         self.assertTrue(any(s.held == "lettuce" for s in self.stations("counter")))
         self.assertTrue(self.prepared("tomato"))

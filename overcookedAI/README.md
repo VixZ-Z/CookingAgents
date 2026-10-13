@@ -45,7 +45,8 @@ separately for salad and soup. At the next order it predicts your most frequent
 starter and begins preparing the other ingredient without waiting for movement.
 For example, after seeing you start soup with tomato, it can prepare onion for
 the next soup while you stand still. One observation is enough for this pilot.
-It prepares its contribution and leaves the predicted human ingredient to you.
+While you remain active, it prepares its contribution and leaves the predicted
+human ingredient to you.
 
 With no history for a recipe it uses the initial tomato assumption.
 Your actual carried ingredient overrides both history and movement guesses. If
@@ -61,6 +62,27 @@ History lives for one game and resets with R. The bottom panel shows the forecas
 for example `Expected start: tomato (2/3 soup starts)`. This ratio describes the
 observed choices, not validated prediction accuracy.
 
+### Taking over after 5 seconds of human inactivity
+
+After 5 seconds without human activity, the robot stops relying on the predicted
+human contribution and completes the most urgent order itself. It uses existing
+ingredients, fetches and prepares missing ones, plates and serves the dish, then
+continues with the next priority order if you remain inactive. The bottom panel
+shows `Human idle` and the time since your last activity.
+
+Movement, attempted movement against an obstacle, E interactions, and actual
+chopping count as activity. Observed position and carried-item changes also reset
+the timer. Standing still while chopping is therefore not considered inactivity.
+The timer uses game time, so pausing does not advance it. The timeout is configured
+by `HUMAN_IDLE_TIMEOUT` in `config.py`.
+
+When you resume activity, the robot immediately returns to cooperative planning
+and adjusts to your carried ingredient. It still avoids your body and occupied
+stations. Ingredients held by an inactive human are not available to the robot;
+it can fetch its own portion rather than waiting indefinitely for delivery.
+In autonomous soup preparation it keeps one pot's batch separate from other pots.
+Robot-only work does not add observations to the learned human starter history.
+
 To isolate one recipe during testing:
 
 ```powershell
@@ -73,8 +95,9 @@ and movement direction. It can start the complementary ingredient while you
 approach a crate, before pickup. While you handle one ingredient it prepares the
 other, fetches a plate, assembles and serves the dish. It avoids occupied stations,
 routes around your body, and gives way at close contact. It does not prepare a
-complete meal from scratch on its own: it leaves the predicted human contribution
-to you, while using ingredients already delivered to finish dishes.
+complete meal from scratch while you remain active: it leaves the predicted human
+contribution to you, while using delivered ingredients to finish dishes. After
+the inactivity timeout, it can complete the whole meal itself.
 
 The screen shows the inferred human goal (blue outline), the robot's task target
 (turquoise outline), its route, and a blue circle for the short movement
@@ -100,7 +123,10 @@ and the original scripted robot. Additional checks cover learning once per order
 autonomous preparation after human/robot delivery, separate recipe histories,
 wrong forecasts, storing extra ingredients and freeing boards. They run without
 a window. Startup checks cover the 0.5-second delay, a stationary human, an early
-human choice, priority changes, and restarting the game.
+human choice, priority changes, and restarting the game. Inactivity checks cover
+the exact timeout, movement and interaction resets, stationary chopping,
+autonomous completion of both recipes, consecutive orders, separate pot batches,
+and returning to collaboration.
 
 ## Overview
 A human and an autonomous robot cook together in a custom Pygame kitchen.

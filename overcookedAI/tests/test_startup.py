@@ -48,24 +48,20 @@ class StartupTests(unittest.TestCase):
         self.assertEqual(state.robot.task.item, "onion")
         self.assertNotIn("Starting", state.robot.status)
 
-    def test_default_prepares_one_part_without_learning_from_itself(self):
+    def test_default_and_idle_takeover_do_not_learn_from_robot_actions(self):
         for recipe in ("salad", "soup"):
             with self.subTest(recipe=recipe):
                 state = GameState(AnticipatoryRobot, seed=0, layout="shared", recipe=recipe)
-                for _ in range(600):
+                for _ in range(1350):
                     state.update(1 / 30, (0, 0), False)
                     self.assertFalse(state.robot.rect.colliderect(state.player.rect))
                     self.assertFalse(any(state.robot.rect.colliderect(s.rect)
                                          for s in state.stations))
-                self.assertEqual(state.robot.completed_salads + state.robot.completed_soups, 0)
-                self.assertEqual(state.score, 0)
+                    if state.robot.completed_salads + state.robot.completed_soups:
+                        break
+                self.assertEqual(state.robot.completed_salads + state.robot.completed_soups, 1)
+                self.assertGreater(state.score, 0)
                 self.assertIsNone(state.robot.model.predict_start(recipe))
-                if recipe == "soup":
-                    self.assertTrue(any(s.contents == ["chopped_onion"]
-                                        for s in state.stations if s.kind == "pot"))
-                else:
-                    self.assertTrue(any(s.held in ("chopped_lettuce", "plated_lettuce")
-                                        for s in state.stations))
 
     def test_no_orders_means_no_ingredient_fetch(self):
         state = GameState(AnticipatoryRobot, seed=0, layout="shared")

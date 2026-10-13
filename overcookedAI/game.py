@@ -189,6 +189,7 @@ class GameState:
                     owner=(rest[0] if rest else None))
             for x, y, kind, label, *rest in self.layout.stations]
         self.player = Player(*self.layout.player_start)
+        self.human_activity_revision = 0
         self.orders: list[Order] = []
         self.score = 0
         self.game_time = float(C.GAME_TIME)
@@ -231,6 +232,7 @@ class GameState:
         self.swapped = True
 
     def player_interact(self):
+        self.human_activity_revision += 1
         target = interaction_target(self.player, self.stations)
         if not (target and handle_counter_combinations(self.player, target)):
             interact(self.player, target, self)
@@ -239,6 +241,9 @@ class GameState:
         """Advance the game by dt seconds. `move` = (dx, dy) input."""
         if self.game_over:
             return
+        if any(move):
+            # Attempts to move count too, including movement blocked by an obstacle.
+            self.human_activity_revision += 1
         obstacles = [s.rect for s in self.stations]
         if self.robot and getattr(self.robot, "avoids_human", False):
             obstacles.append(self.robot.rect)
@@ -246,6 +251,7 @@ class GameState:
         target = interaction_target(self.player, self.stations)
         if (chopping and target and target.kind == "board"
                 and chop_name(target.held)):
+            self.human_activity_revision += 1
             target.progress += dt
             if target.progress >= C.CHOP_TIME:
                 target.held = chop_name(target.held)
