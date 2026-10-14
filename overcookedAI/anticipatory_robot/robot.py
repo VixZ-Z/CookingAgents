@@ -5,24 +5,18 @@ learning, forgetting or h yet. Human inactivity triggers autonomous completion.
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+import json
+import logging
+import re
 
 import pygame
 
 import config as C
-from game import COMBOS, Station, chop_name, handle_counter_combinations, interact
+from game import COMBOS, chop_name
 from navigation import Navigator, approach_point
 from robot_base import RobotBase
+from robot_tasks import Task, execute_task
 from .model import HumanIntentModel, ingredient_name
-
-
-@dataclass
-class Task:
-    station: Station
-    action: str
-    item: str | None
-    label: str
-    recipe: str | None
 
 
 class AnticipatoryRobot(RobotBase):
@@ -53,6 +47,26 @@ class AnticipatoryRobot(RobotBase):
         self.status = f"Starting in {C.ROBOT_START_DELAY:.1f}s"
         self.completed_salads = 0
         self.completed_soups = 0
+        self._route_cache_key = None
+        self._route_cache = {}
+        self._diagnostic_key = None
+        self.diagnostic_revision = 0
+        self.diagnostic = {}
+        self._events = []
+        self._navigation_requested = False
+        self._attempted_task = None
+
+    def _reachable(self, station, state):
+        bounds, obstacles = self.navigator._geometry(self, state)
+        key = (tuple(self.pos), tuple(bounds), tuple(tuple(r) for r in obstacles))
+        if key != self._route_cache_key:
+            self._route_cache_key, self._route_cache = key, {}
+        target = tuple(approach_point(station))
+        if target not in self._route_cache:
+            center = self.pos + pygame.Vector2(self.rect.size) / 2
+            self._route_cache[target] = (self.navigator._clear(center, target, bounds, obstacles) or bool(
+                self.navigator._route(self, pygame.Vector2(target), state, None)))
+        return self._route_cache[target]
 
     @property
     def recipe(self):
@@ -91,11 +105,15 @@ class AnticipatoryRobot(RobotBase):
         return distance < 72
 
     def _choose_station(self, stations, state):
-        candidates = [s for s in stations if s.owner in (None, "shared", "robot")
+        candidates = [s for s in stations if any(s is existing for existing in state.stations)
+                      and s.owner in (None, "shared", "robot")
                       and not self._near_human(s, state)
                       and not (not self.autonomous and self.intent and s is self.intent.goal)]
-        return min(candidates, key=lambda s: pygame.Vector2(self.rect.center).distance_to(
-            approach_point(s))) if candidates else None
+        for station in sorted(candidates, key=lambda s: pygame.Vector2(self.rect.center).distance_to(
+                approach_point(s))):
+            if self._reachable(station, state):
+                return station
+        return None
 
     def _pick(self, station, action, item, label):
         return Task(station, action, item, label, self.recipe) if station else None
@@ -105,7 +123,8 @@ class AnticipatoryRobot(RobotBase):
         return [s for s in state.stations if s.kind in ("counter", "board")]
 
     def _inventory(self, state):
-        items = [s.held for s in self._surfaces(state)]
+        items = [s.held for s in self._surfaces(state)
+                 if s.held and s.owner in (None, "shared", "robot") and self._reachable(s, state)]
         items.append(self.carrying)
         if not self.autonomous:
             items.append(state.player.carrying)
@@ -285,8 +304,14 @@ class AnticipatoryRobot(RobotBase):
         return self._prepare_complement(state)
 
     def _autonomous_soup_pot(self, state):
+        if self.autonomous_pot and not any(self.autonomous_pot is s for s in state.stations):
+            self.autonomous_pot = None
         if self.autonomous_pot:
-            return self.autonomous_pot
+            # Keep a started batch together; an empty inaccessible pot has no
+            # work to preserve and must not prevent selecting another pot.
+            if self.autonomous_pot.contents or self._choose_station([self.autonomous_pot], state):
+                return self.autonomous_pot
+            self.autonomous_pot = None
         pots = [s for s in state.stations if s.kind == "pot"
                 and set(s.contents) <= {"chopped_tomato", "chopped_onion"}]
         # Finish an accessible pot first and keep one batch's inventory separate.
@@ -298,7 +323,9 @@ class AnticipatoryRobot(RobotBase):
         return None
 
     def _autonomous_task(self, state):
-        surfaces = self._surfaces(state)
+        surfaces = [s for s in self._surfaces(state)
+                    if s.owner in (None, "shared", "robot")
+                    and (s.held is None or self._reachable(s, state))]
         finished = self._choose_station([s for s in surfaces if s.held == self.recipe], state)
         if finished:
             return self._pick(finished, "take", self.recipe, "Collecting our " + self.recipe)
@@ -339,7 +366,8 @@ class AnticipatoryRobot(RobotBase):
             if board:
                 target = self._choose_station(
                     [s for s in state.stations if s.kind == "crate_" + name], state)
-                return self._pick(target, "fetch", name, "Taking over: prepare " + name)
+                if target:
+                    return self._pick(target, "fetch", name, "Taking over: prepare " + name)
         if self.recipe == "salad" and not needed:
             return self._plate_task(state)
         return None
@@ -354,9 +382,11 @@ class AnticipatoryRobot(RobotBase):
             if board.held and (ingredient_name(board.held) == self.human_ingredient
                                or ingredient_name(board.held) not in self.ingredients):
                 target = self._choose_station([board], state)
-                return self._pick(target, "take_for_reassignment", board.held,
-                                  "Clearing my board after your change of plan")
-            self.reassigned_board = None
+                if target:
+                    return self._pick(target, "take_for_reassignment", board.held,
+                                      "Clearing my board after your change of plan")
+            else:
+                self.reassigned_board = None
         if self.recipe is None:
             return None
         # Hand over the finished dish if the human is already serving this recipe.
@@ -366,10 +396,14 @@ class AnticipatoryRobot(RobotBase):
             item = self.own_board.held
             if item in self.ingredients:
                 target = self._choose_station([self.own_board], state)
-                return self._pick(target, "chop", item, "Chopping " + item)
+                if target:
+                    return self._pick(target, "chop", item, "Chopping " + item)
             if item in tuple("chopped_" + name for name in self.ingredients):
-                return self._pick(self.own_board, "take", item, "Collecting chopped ingredient")
-            self.own_board = None
+                target = self._choose_station([self.own_board], state)
+                if target:
+                    return self._pick(target, "take", item, "Collecting chopped ingredient")
+            if item not in self.ingredients and item not in tuple("chopped_" + name for name in self.ingredients):
+                self.own_board = None
         target = self._choose_station([s for s in self._surfaces(state) if s.held == self.recipe], state)
         if target:
             return self._pick(target, "take", self.recipe, "Collecting our " + self.recipe)
@@ -377,7 +411,7 @@ class AnticipatoryRobot(RobotBase):
 
     def _valid(self, task, state):
         st = task.station
-        if st.owner not in (None, "shared", "robot"):
+        if not any(st is station for station in state.stations) or st.owner not in (None, "shared", "robot"):
             return False
         if task.action != "serve" and task.recipe != self.recipe:
             return False
@@ -434,14 +468,46 @@ class AnticipatoryRobot(RobotBase):
         bounds, obstacles = self.navigator._geometry(self, state)
         for goal in (center + side * 85, center - side * 85):
             if self.navigator._clear(center, goal, bounds, obstacles):
+                self._navigation_requested = True
+                self._events.append("yielding")
                 self.navigator.move_to(self, goal, state, dt, projected)
                 self.status = "Making room for you"
                 return
 
     def update_ai(self, dt, state):
+        """Update behaviour and publish diagnostics only when the decision changes."""
+        self._events = []
+        self._navigation_requested = False
+        self._attempted_task = None
+        before = self.task
+        self._update_ai(dt, state)
+        task = self.task or self._attempted_task
+        decision = re.sub(r"\d+(\.\d+)?s", "", self.status)
+        if not self.enabled:
+            decision = "Disabled by user"
+        target = ((task.station.label, tuple(task.station.rect), task.action, task.item)
+                  if task else None)
+        navigation = self.navigator.reason if self._navigation_requested else "not_requested"
+        key = (target, decision, navigation, self.autonomous)
+        if key != self._diagnostic_key:
+            self._diagnostic_key = key
+            self.diagnostic_revision += 1
+            self.diagnostic = {"decision": decision, "task": target,
+                               "navigation": navigation,
+                               "route_exists": bool(self.navigator.path) if self._navigation_requested else None,
+                               "planned_path": self.navigator.planned_path if self._navigation_requested else [],
+                               "events": self._events + (["task_changed"] if before is not task else []),
+                               "intentional_wait": (navigation not in ("no_route", "collision_rejected")
+                                                    and ("waiting" in decision.lower() or "access" in decision.lower()
+                                                         or "Starting" in decision or not self.enabled)),
+                               "autonomous": self.autonomous}
+            logging.getLogger(__name__).info("robot_decision %s", json.dumps(self.diagnostic))
+
+    def _update_ai(self, dt, state):
         previous_order = self.priority_order
         self.priority_order = state.priority_order
         if previous_order is not self.priority_order:
+            self._events.append("priority_changed")
             # Reset roles for every new order, including another order of the same recipe.
             # Prepared ingredients remain available; history survives order changes.
             self.task = None
@@ -459,15 +525,27 @@ class AnticipatoryRobot(RobotBase):
             self.status = f"Starting in {C.ROBOT_START_DELAY - state.elapsed - dt:.2f}s"
             return
         if self.navigator.make_space(self, state, dt):
+            self._events.append("contact_recovery")
             self.status = "Making room for you"
             return
+        if self.rect.inflate(12, 12).colliderect(state.player.rect):
+            self._events.append("contact_no_legal_retreat")
         if self.task and not self._valid(self.task, state):
+            self._events.append("task_invalidated")
+            self.task = None
+        if self.task and (self._near_human(self.task.station, state)
+                          or (not self.autonomous and self.task.station is self.intent.goal)):
+            self._events.append("target_reserved_by_human")
             self.task = None
         if self.task is None:
+            self._events.append("planning")
             self.task = self._plan(state)
         if self.task is None:
+            self._events.append("no_valid_action")
             names = " or ".join(self.ingredients)
-            if self.autonomous and self.recipe:
+            if self.carrying:
+                self.status = "Waiting for station access for " + self.carrying
+            elif self.autonomous and self.recipe:
                 self.status = "Human idle: waiting for station access"
             elif self.contribution_source in ("routine", "default"):
                 self.status = "Waiting for your " + self.human_ingredient + " or station access"
@@ -476,36 +554,37 @@ class AnticipatoryRobot(RobotBase):
             self._yield(state, dt)
             return
         task, st = self.task, self.task.station
+        self._attempted_task = task
         self.status = task.label
         if self._near_human(st, state) or (not self.autonomous and st is self.intent.goal):
             self.status = "Giving you access to " + st.label
             self._yield(state, dt)
             return
         projected = self.intent.projected_position if self.intent.velocity.length() > 20 else None
+        self._navigation_requested = True
         if not self.navigator.move_to(self, approach_point(st), state, dt, projected):
-            if not self.navigator.path:
+            if self.navigator.stuck:
+                self.status = "Path blocked: waiting to resume " + task.label
+                self._events.append("unreachable_task_reconsidered")
+                self.task = None
+            elif not self.navigator.path:
                 self.status = "Waiting for a clear path to " + st.label
             return
         if not self.rect.inflate(50, 50).colliderect(st.rect):
             return
+        result = execute_task(self, task, state, dt)
+        if result == "working":
+            return
+        if result == "waiting":
+            self.status = "Waiting for soup to finish cooking"
+            return
+        if result == "failed":
+            self._events.append("interaction_no_effect")
+            self.task = None
+            return
         if task.action == "chop":
-            st.progress += dt
-            if st.progress < C.CHOP_TIME:
-                return
-            st.held, st.progress = chop_name(st.held), 0
             self.own_board = st
         else:
-            if task.action == "scoop" and not st.ready:
-                self.status = "Waiting for soup to finish cooking"
-                return
-            before = (self.carrying, st.held, tuple(st.contents), state.score)
-            if task.action == "combine":
-                handle_counter_combinations(self, st)
-            else:
-                interact(self, st, state)
-            if before == (self.carrying, st.held, tuple(st.contents), state.score):
-                self.task = None
-                return
             if task.action == "put" and st.kind == "board":
                 self.own_board = st
             if task.action == "put" and st.kind == "counter":

@@ -184,6 +184,7 @@ class GameState:
         self.order_kinds = [recipe] if recipe else C.ORDER_KINDS
         self.layout = get_layout(layout)
         self.swapped = False
+        self.walls = [pygame.Rect(*wall) for wall in self.layout.walls]
         self.stations = [
             Station(pygame.Rect(x, y, C.TILE, C.TILE), kind, label,
                     owner=(rest[0] if rest else None))
@@ -244,7 +245,7 @@ class GameState:
         if any(move):
             # Attempts to move count too, including movement blocked by an obstacle.
             self.human_activity_revision += 1
-        obstacles = [s.rect for s in self.stations]
+        obstacles = [s.rect for s in self.stations] + self.walls
         if self.robot and getattr(self.robot, "avoids_human", False):
             obstacles.append(self.robot.rect)
         self.player.update(dt, move, obstacles)

@@ -77,6 +77,36 @@ within-trial split of robot actions into anticipatory and reactive ones.
    completion time (`order_new` to `serve`), expired orders, human and robot
    idle time from the 5 Hz positions, from `summary.csv` and the event stream.
 
+## Robot decision diagnostics
+
+Anticipatory and reactive games add `event` rows with `action=diagnostic`. The `info` column
+contains JSON with the current or just attempted task (station label, rectangle,
+action, item), decision text, navigation reason, route availability, the latest
+planned waypoints, decision events and autonomous mode. `intentional_wait`
+distinguishes expected resource/access waiting from a failed requested route.
+Navigation reasons include `not_requested`, `moving`, `arrived`, `no_route` and
+`collision_rejected`. Events identify invalidated tasks, replanning, contact
+recovery, yielding, priority changes and cases with no valid action.
+
+Rows are emitted when the task, decision, navigation outcome or autonomous mode
+changes; unchanged waits and periodic identical replans produce no per-frame
+diagnostic rows. `planned_path` is the latest plan at that transition, not a
+per-frame trace. Diagnostics do not count as cooking actions in the summary.
+
+To also print decision changes in the terminal:
+
+```powershell
+python main.py --robot anticipatory --seed 0 --debug-agent
+```
+
+CSV recording remains enabled by default. `--no-log` disables CSV writing;
+`--debug-agent` can still print diagnostics independently.
+
+Reactive diagnostics also include `unreachable_targets`. All reactive robot
+actions have `anticipating=0`; the policy does not set a contribution forecast
+or an autonomous takeover mode. Launch with
+`python main.py --robot reactive --layout reactive --seed 0 --debug-agent`.
+
 ## Known limitations
 * The logger observes state; it does not know the robot's internal "h" or
   prediction confidence. If fixed/dynamic `h` is added to the agent, log it in

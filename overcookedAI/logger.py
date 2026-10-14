@@ -13,6 +13,7 @@ logging code. See LOGGING.md for the column dictionary.
 from __future__ import annotations
 
 import csv
+import json
 import os
 import re
 import time
@@ -68,6 +69,7 @@ class RunRecorder:
         self._order_ids, self._order_refs = {}, []
         self._pos_acc = 0.0
         self._last_status = None
+        self._last_diagnostic_revision = 0
         self._stats = {"served_human": 0, "served_robot": 0, "salads": 0,
                        "soups": 0, "expired": 0, "first_serve_t": "",
                        "robot_actions": 0, "robot_anticipating_actions": 0}
@@ -177,6 +179,10 @@ class RunRecorder:
 
         # Robot status text (what the robot says it is doing) ------------
         if robot:
+            revision = getattr(robot, "diagnostic_revision", 0)
+            if revision != self._last_diagnostic_revision:
+                self._last_diagnostic_revision = revision
+                self._log(t, "diagnostic", "robot", info=json.dumps(robot.diagnostic))
             # Drop countdown numbers ("Starting in 0.48s") so only real
             # changes of activity are logged.
             status = re.sub(r"\d+(\.\d+)?s", "", robot.status).strip()

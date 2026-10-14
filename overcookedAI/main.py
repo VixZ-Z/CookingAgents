@@ -5,12 +5,13 @@
     python main.py --robot anticipatory --seed 0   # shared kitchen, salads and soups
 
 Robots : scripted | reactive | anticipatory | none
-Layouts: scripted | shared | near | far | mixed | swap   (see layouts.py)
+Layouts: scripted | shared | reactive | near | far | mixed | swap
 
 Controls: WASD move, E interact, hold SPACE chop, B robot on/off,
 P pause, R restart, ESC quit.
 """
 import argparse
+import logging
 
 import pygame
 
@@ -41,7 +42,7 @@ def main():
     ap.add_argument("--robot", default="scripted",
                     choices=["scripted", "reactive", "anticipatory", "none"])
     ap.add_argument("--layout", default=None, choices=LAYOUT_NAMES,
-                    help="default: scripted for scripted, shared for anticipatory, else near")
+                    help="default: scripted for scripted, shared for anticipatory, reactive for reactive, else near")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--recipe", choices=C.ORDER_KINDS,
                     help="limit orders to one recipe; default includes salad and soup")
@@ -50,9 +51,13 @@ def main():
     ap.add_argument("--condition", default="",
                     help="free label for the experiment condition, e.g. fixed_h")
     ap.add_argument("--no-log", action="store_true", help="do not write logs")
+    ap.add_argument("--debug-agent", action="store_true",
+                    help="print robot decision and navigation changes to the console")
     args = ap.parse_args()
+    if args.debug_agent:
+        logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
 
-    defaults = {"scripted": "scripted", "anticipatory": "shared"}
+    defaults = {"scripted": "scripted", "anticipatory": "shared", "reactive": "reactive"}
     layout = args.layout or defaults.get(args.robot, "near")
     recipe = args.recipe
     if args.robot == "anticipatory":
@@ -60,8 +65,8 @@ def main():
             ap.error("the anticipatory prototype uses --layout shared or scripted")
     if args.robot == "scripted" and layout != "scripted":
         ap.error("the scripted robot only works with --layout scripted")
-    if args.robot == "reactive" and layout in ("scripted", "shared"):
-        ap.error("reactive robot uses near/far/mixed/swap layouts")
+    if args.robot == "reactive" and layout != "reactive":
+        ap.error("the reactive robot requires --layout reactive")
     robot_cls = get_robot_class(args.robot)
 
     pygame.init()

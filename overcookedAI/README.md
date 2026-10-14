@@ -129,6 +129,52 @@ autonomous completion of both recipes, consecutive orders, separate pot batches,
 and returning to collaboration.
 
 ## Overview
+### Separated reactive kitchen
+
+Run the reactive robot in the divided kitchen:
+
+```powershell
+python main.py --robot reactive --layout reactive --seed 0
+```
+
+A solid divider runs across the entire playable height. Two purple handoff
+counters interrupt the wall, each holding one item and reachable from both
+sides. The human has all three ingredient crates, two boards and a trash bin.
+The robot side has a board for raw deliveries, a pot, plates, two work counters,
+a serving station and a trash bin. The human can deliver raw or chopped
+ingredients; salad requires tomato and lettuce, soup requires tomato and onion.
+Neither agent can walk into the other workspace.
+
+Collect tomato and lettuce for salad, or tomato and onion for soup. Use E to
+leave each raw or chopped ingredient on either empty purple handoff counter.
+The robot collects and chops raw deliveries, assembles salads or cooks soup,
+fetches a plate and serves. It continues across orders without restarting.
+You may remain beside a handoff: each teammate uses their own side.
+
+Orders with all required ingredients currently available take precedence, with
+the earliest deadline breaking ties. Otherwise, the robot prepares available
+ingredients for the earliest actionable order. It leaves duplicates for later
+orders and does not plate a lone salad ingredient, keeping chopped tomato
+available for either recipe until the second ingredient arrives. Missing
+ingredients or access cause waiting or selection of another available task.
+Leftovers from expired orders can be cleared off the board and stored to make
+room for new raw deliveries; they are not discarded automatically.
+
+The policy uses current orders, station contents and carried robot items only.
+It never fetches ingredients from the human side, infers human intent, learns
+preferences or takes over after human inactivity. The human's body is used only
+for collision avoidance. `--robot reactive` defaults to this map; other layouts
+are rejected. Add `--recipe salad` or `--recipe soup` to restrict orders.
+Use `--robot none --layout reactive --no-log` to preview the map without a robot.
+
+The interface shows the task, target, recipe and route. Transition diagnostics
+are included in the normal CSV logs; add `--debug-agent` for console diagnostics
+(see `LOGGING.md`). B toggles the robot and R starts a fresh game.
+
+Comparing this separated kitchen with anticipatory mode in the shared kitchen
+changes both layout and policy; a controlled policy comparison needs the same
+layout for both agents.
+
 A human and an autonomous robot cook together in a custom Pygame kitchen.
 The shared-kitchen prototype above is the current development focus. Older
 separate-station maps remain available as previews for a possible later study.
@@ -142,16 +188,17 @@ routines remain possible later extensions, outside the first prototype.
 ```
 main.py             entry point / main loop (--robot, --layout, --seed)
 config.py           constants and the original station layout (pixels)
-layouts.py          selectable layouts: scripted, shared, near, far, mixed, swap
+layouts.py          selectable layouts: scripted, shared, reactive, near, far, mixed, swap
 game.py             game logic: stations, orders, player, rules, scoring
 render.py           all pygame drawing
 robot_base.py       common robot interface
 scripted_robot/     original robot (works, scripted layout only)
-reactive_robot/     baseline robot (stub)
+reactive_robot/     divided-kitchen robot using delivered items and current orders
+robot_tasks.py      shared task description and game-rule execution
 anticipatory_robot/ goal inference, learned starter frequencies, cooperative planner
 navigation.py       body-aware A* paths, movement projection costs, contact recovery
 tests/              headless behavioural checks
-logger.py           event/position logger (not wired in yet)
+logger.py           CSV events, positions, decision diagnostics and run summaries
 run_sim.py, run_participant.py   stubs for later phases
 ```
 
@@ -170,6 +217,6 @@ pip install -r requirements.txt
 python main.py                                   # scripted robot
 python main.py --robot none --layout far         # preview a layout
 ```
-Layouts: `scripted | shared | near | far | mixed | swap`.
+Layouts: `scripted | shared | reactive | near | far | mixed | swap`.
 Controls: WASD move, E interact, hold SPACE chop, B robot on/off, P pause,
 R restart, ESC quit.
