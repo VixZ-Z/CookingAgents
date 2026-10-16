@@ -43,6 +43,61 @@ def path_distance(actor, goal, state, start=None):
     return distance
 
 
+def situation(action, station_kind):
+    """Coarse situation key for pace learning, e.g. ``take:crate`` or ``put:counter``."""
+    kind = "crate" if station_kind.startswith("crate_") else station_kind
+    return f"{action}:{kind}"
+
+
+class PaceModel:
+    """Per-situation estimate of how long this human takes at a station.
+
+    The handling time of a step is the time between two completed human actions
+    minus the walking time between their stations. Estimates are running means
+    shrunk towards the default interaction time, so a step with no observations
+    behaves exactly like the original constant. Chopping is learned as a factor
+    on the game's chop time. Nothing persists beyond one game.
+    """
+    PRIOR_WEIGHT = 1.0
+    MAX_INTERVAL = 15.0     # longer gaps are pauses, not pace
+    MAX_HANDLING = 10.0
+
+    def __init__(self):
+        self.handling = {}          # situation -> [sum seconds, samples]
+        self.chop = [0.0, 0]        # [sum of observed/nominal chop time, samples]
+        self.revision = 0
+
+    def handling_seconds(self, key):
+        total, n = self.handling.get(key, (0.0, 0))
+        return (self.PRIOR_WEIGHT * C.H_INTERACTION_SECONDS + total) / (self.PRIOR_WEIGHT + n)
+
+    @property
+    def chop_factor(self):
+        total, n = self.chop
+        return (self.PRIOR_WEIGHT + total) / (self.PRIOR_WEIGHT + n)
+
+    def observe(self, key, interval, walking):
+        if not 0 < interval <= self.MAX_INTERVAL:
+            return
+        if key == "chop:board":
+            self.chop[0] += min(max(interval / C.CHOP_TIME, 0.5), 10.0)
+            self.chop[1] += 1
+        else:
+            handling = max(0.0, interval - walking)
+            if handling > self.MAX_HANDLING:
+                return
+            entry = self.handling.setdefault(key, [0.0, 0])
+            entry[0] += handling
+            entry[1] += 1
+        self.revision += 1
+
+    def snapshot(self):
+        steps = {key: dict(seconds=round(self.handling_seconds(key), 3), samples=n)
+                 for key, (_, n) in sorted(self.handling.items())}
+        return dict(handling=steps, chop_factor=round(self.chop_factor, 3),
+                    chop_samples=self.chop[1], default_handling=C.H_INTERACTION_SECONDS)
+
+
 @dataclass
 class HandoffEstimate:
     target: object | None = None
@@ -52,6 +107,7 @@ class HandoffEstimate:
     chopping: float = 0.0
     interactions: int = 1
     source: str = "unknown"
+    steps: tuple = ()
 
 
 class HumanHorizon:
@@ -75,6 +131,8 @@ class HumanHorizon:
         self._signature = None
         self._eta = 0.0
         self._estimate_time = state.elapsed
+        self.pace = PaceModel()
+        self._last_event = None
 
     @property
     def fixed_seconds(self):
@@ -102,11 +160,12 @@ class HumanHorizon:
         waypoints = []
         item = human.carrying
         action, chopping, interactions, source = "put", 0.0, 1, "carried_item"
+        steps = ("put:counter",)
 
         if item is None and target and target.action == "take" and target.station_kind == "counter":
             choices = [s for s in counters if s.held == target.item]
             return self._destination(state, choices, "take", target.item, [], 0.0, 1,
-                                     "learned_counter_pickup")
+                                     "learned_counter_pickup", ("take:counter",))
         if item is None:
             boards = [s for s in state.stations if s.kind == "board" and s.owner == "human"
                       and s.held and (chop_name(s.held) or s.held.startswith("chopped_"))]
@@ -122,6 +181,7 @@ class HumanHorizon:
                 item = chop_name(board.held) or board.held
                 chopping = max(0.0, C.CHOP_TIME - board.progress) if chop_name(board.held) else 0.0
                 interactions, source = 2, "observed_board"
+                steps = ("take:board", "put:counter")
                 waypoints = [approach_point(board)]
             elif target and target.action == "take" and target.station_kind.startswith("crate_"):
                 crates = [s for s in state.stations if s.owner == "human"
@@ -129,6 +189,7 @@ class HumanHorizon:
                 if not crates:
                     return HandoffEstimate()
                 item, interactions, source = target.item, 2, "learned_crate_pickup"
+                steps = ("take:crate", "put:counter")
                 waypoints = [approach_point(crates[0])]
             else:
                 return HandoffEstimate()
@@ -141,10 +202,12 @@ class HumanHorizon:
                 approach_point(s)))
             waypoints = [approach_point(board)]
             item, chopping, interactions, source = chop_name(item), C.CHOP_TIME, 3, "learned_board_route"
+            steps = ("put:board", "take:board", "put:counter")
         return self._destination(state, [s for s in counters if s.held is None], action,
-                                 item, waypoints, chopping, interactions, source)
+                                 item, waypoints, chopping, interactions, source, steps)
 
-    def _destination(self, state, counters, action, item, waypoints, chopping, interactions, source):
+    def _destination(self, state, counters, action, item, waypoints, chopping, interactions, source,
+                     steps=()):
         start = pygame.Vector2(state.player.rect.center)
         prefix = 0.0
         for point in waypoints:
@@ -156,7 +219,32 @@ class HumanHorizon:
         if not choices:
             return HandoffEstimate()
         distance, station = min(choices, key=lambda pair: pair[0])
-        return HandoffEstimate(station, action, item, distance, chopping, interactions, source)
+        return HandoffEstimate(station, action, item, distance, chopping, interactions, source, steps)
+
+    def _learn_pace(self, state, events):
+        """Update per-situation handling times from newly completed human actions."""
+        for event in events:
+            previous, self._last_event = self._last_event, event
+            if previous is None:
+                continue
+            stations = state.stations
+            if not (0 <= previous.station_index < len(stations)
+                    and 0 <= event.station_index < len(stations)):
+                continue
+            walking = path_distance(state.player, self.human_approach(stations[event.station_index]),
+                                    state, start=self.human_approach(stations[previous.station_index]))
+            if not math.isfinite(walking):
+                continue
+            key = situation(event.symbol.action, event.symbol.station_kind)
+            self.pace.observe(key, event.time - previous.time, walking / self.speed)
+
+    def _eta_seconds(self, estimate):
+        est = estimate
+        if est.steps:
+            handling = sum(self.pace.handling_seconds(key) for key in est.steps)
+        else:
+            handling = est.interactions * C.H_INTERACTION_SECONDS
+        return est.distance / self.speed + est.chopping * self.pace.chop_factor + handling
 
     def update(self, state, dt, transitions):
         now = state.elapsed + dt
@@ -168,6 +256,7 @@ class HumanHorizon:
             self.walking_time += elapsed
             self.speed = self.walking_distance / self.walking_time
         fresh = state.human_actions[self.cursor:]
+        self._learn_pace(state, fresh)
         if fresh:
             self.anchor_time = fresh[-1].time
         elif state.player.carrying != self.previous_item:
@@ -184,8 +273,7 @@ class HumanHorizon:
             self.estimate = self._hint(state, transitions)
             self._estimate_time, self._signature = now, signature
             self._refresh_at = now + self.REFRESH_SECONDS
-            self._eta = (self.estimate.distance / self.speed + self.estimate.chopping
-                         + self.estimate.interactions * C.H_INTERACTION_SECONDS)
+            self._eta = self._eta_seconds(self.estimate)
         if self.estimate.target is None:
             self.remaining = None
         elif self.mode == "fixed":

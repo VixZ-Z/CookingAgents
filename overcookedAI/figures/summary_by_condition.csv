@@ -1,0 +1,2 @@
+group,games,participants,score_mean,score_sd,serves_per_min_mean,serves_per_min_sd,expired_mean,expired_sd,order_time_mean,order_time_sd,dwell_mean_mean,dwell_mean_sd,late_share_mean,late_share_sd,h_mae_mean,h_mae_sd,h_bias_mean,h_bias_sd,robot_wait_s_mean,robot_wait_s_sd,human_still_s_mean,human_still_s_sd,human_distance_px_mean,human_distance_px_sd,anticipating_share_mean,anticipating_share_sd
+fixed_h,2,1,330.5,467.398,1.3,1.838,0.0,0.0,49.968,,,,,,,,,,,,,,,,,

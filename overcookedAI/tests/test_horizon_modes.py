@@ -22,7 +22,7 @@ from human_transitions import ActionSymbol, HumanActionEvent
 from logger import RunRecorder
 from main import get_robot_class, main
 from navigation import Navigator, approach_point
-from reactive_robot import ReactiveRobot, ReactiveFixedHRobot, ReactiveDynamicHRobot
+from reactive_robot import ReactiveRobot, AnticipatoryFixedHRobot, AnticipatoryDynamicHRobot
 
 
 DT = 1 / 30
@@ -33,8 +33,8 @@ def place(actor, center):
     actor.pos.update(actor.rect.topleft)
 
 
-def make_state(robot=ReactiveFixedHRobot, recipe="salad"):
-    state = GameState(robot, seed=0, layout="reactive", recipe=recipe)
+def make_state(robot=AnticipatoryFixedHRobot, recipe="salad"):
+    state = GameState(robot, seed=0, layout="divided", recipe=recipe)
     state.orders = [Order(recipe, 150)]
     state.order_timer = -1000
     return state
@@ -98,7 +98,7 @@ class HorizonEstimateTests(unittest.TestCase):
         self.assertEqual(state.score, 0)
 
     def test_no_evidence_means_unknown_in_both_modes(self):
-        for robot in (ReactiveFixedHRobot, ReactiveDynamicHRobot):
+        for robot in (AnticipatoryFixedHRobot, AnticipatoryDynamicHRobot):
             state = make_state(robot)
             before = state.robot.rect.copy()
             tick(state, 1)
@@ -107,7 +107,7 @@ class HorizonEstimateTests(unittest.TestCase):
             self.assertEqual(state.robot.rect, before)
 
     def test_dynamic_h_changes_with_distance(self):
-        state = make_state(ReactiveDynamicHRobot)
+        state = make_state(AnticipatoryDynamicHRobot)
         state.robot.enabled = False
         state.player.carrying = "chopped_tomato"
         place(state.player, (400, 350))
@@ -120,7 +120,7 @@ class HorizonEstimateTests(unittest.TestCase):
     def test_dynamic_h_learns_observed_walking_speed(self):
         estimates = []
         for speed in (115, 230):
-            state = make_state(ReactiveDynamicHRobot)
+            state = make_state(AnticipatoryDynamicHRobot)
             state.robot.enabled = False
             state.player.carrying = "tomato"
             state.update(DT, (0, 0), False)
@@ -133,7 +133,7 @@ class HorizonEstimateTests(unittest.TestCase):
         self.assertGreater(estimates[0], estimates[1])
 
     def test_dynamic_h_tracks_stationary_human_chopping_progress(self):
-        state = make_state(ReactiveDynamicHRobot)
+        state = make_state(AnticipatoryDynamicHRobot)
         state.robot.enabled = False
         use(state, find(state, "crate_tomato"))
         use(state, find(state, "board", "human"))
@@ -147,7 +147,7 @@ class HorizonEstimateTests(unittest.TestCase):
         self.assertLess(state.robot.horizon.remaining, before)
 
     def test_blocked_handoffs_produce_unknown_not_a_straight_line_eta(self):
-        state = make_state(ReactiveDynamicHRobot)
+        state = make_state(AnticipatoryDynamicHRobot)
         state.player.carrying = "tomato"
         for s in state.stations:
             if s.owner == "shared":
@@ -158,7 +158,7 @@ class HorizonEstimateTests(unittest.TestCase):
         self.assertIsNone(state.robot.task)
 
     def test_dynamic_route_accounts_for_a_detour(self):
-        state = make_state(ReactiveDynamicHRobot)
+        state = make_state(AnticipatoryDynamicHRobot)
         state.robot.enabled = False
         state.player.carrying = "tomato"
         state.update(0.3, (0, 0), False)
@@ -169,7 +169,7 @@ class HorizonEstimateTests(unittest.TestCase):
         self.assertGreater(state.robot.horizon.remaining, direct)
 
     def test_learned_board_route_includes_chopping_and_interactions(self):
-        state = make_state(ReactiveDynamicHRobot)
+        state = make_state(AnticipatoryDynamicHRobot)
         model = state.robot.transition_model
         source = ActionSymbol("take", "tomato", "crate_tomato")
         target = ActionSymbol("put", "tomato", "board")
@@ -192,7 +192,7 @@ class HorizonEstimateTests(unittest.TestCase):
                 horizon.fixed_seconds = value
 
     def test_h_can_describe_a_human_pickup_from_the_shared_counter(self):
-        state = make_state(ReactiveDynamicHRobot)
+        state = make_state(AnticipatoryDynamicHRobot)
         counter = find(state, "counter", "shared")
         counter.held = "plate"
         model = state.robot.transition_model
@@ -212,7 +212,7 @@ class HorizonEstimateTests(unittest.TestCase):
 class HorizonPolicyTests(unittest.TestCase):
     def test_fixed_and_dynamic_modes_can_choose_different_actions_for_the_same_world(self):
         actions = []
-        for robot in (ReactiveFixedHRobot, ReactiveDynamicHRobot):
+        for robot in (AnticipatoryFixedHRobot, AnticipatoryDynamicHRobot):
             state = make_state(robot)
             state.player.carrying = "tomato"
             state.update(DT, (0, 0), False)
@@ -242,7 +242,7 @@ class HorizonPolicyTests(unittest.TestCase):
         self.assertFalse(hasattr(state.robot, "horizon"))
 
     def test_available_cooking_work_precedes_horizon_preparation(self):
-        for robot in (ReactiveFixedHRobot, ReactiveDynamicHRobot):
+        for robot in (AnticipatoryFixedHRobot, AnticipatoryDynamicHRobot):
             state = make_state(robot)
             handoffs = [s for s in state.stations if s.owner == "shared"]
             handoffs[0].held, handoffs[1].held = "chopped_tomato", "chopped_lettuce"
@@ -294,7 +294,7 @@ class HorizonPolicyTests(unittest.TestCase):
         self.assertNotIn("prepare_plate", state.robot.scheduling["candidates"])
 
     def test_both_variants_complete_raw_and_chopped_orders_after_waiting(self):
-        for robot in (ReactiveFixedHRobot, ReactiveDynamicHRobot):
+        for robot in (AnticipatoryFixedHRobot, AnticipatoryDynamicHRobot):
             for recipe in ("salad", "soup"):
                 for chopped in (False, True):
                     with self.subTest(robot=robot.__name__, recipe=recipe, chopped=chopped):
@@ -313,15 +313,15 @@ class HorizonPolicyTests(unittest.TestCase):
                         self.assertEqual(state.robot.completed_salads + state.robot.completed_soups, 1)
 
     def test_all_three_reactive_variants_share_layout_and_initial_order_schedule(self):
-        states = [GameState(cls, seed=2, layout="reactive") for cls in
-                  (ReactiveRobot, ReactiveFixedHRobot, ReactiveDynamicHRobot)]
+        states = [GameState(cls, seed=2, layout="divided") for cls in
+                  (ReactiveRobot, AnticipatoryFixedHRobot, AnticipatoryDynamicHRobot)]
         schedules = [[(o.kind, o.time_left) for o in state.orders] for state in states]
         self.assertEqual(schedules[0], schedules[1])
         self.assertEqual(schedules[1], schedules[2])
         self.assertEqual({o.kind for o in states[1].orders}, {"salad", "soup"})
 
     def test_moving_human_collects_and_delivers_while_timing_policy_runs(self):
-        for robot in (ReactiveFixedHRobot, ReactiveDynamicHRobot):
+        for robot in (AnticipatoryFixedHRobot, AnticipatoryDynamicHRobot):
             with self.subTest(robot=robot.__name__):
                 state = make_state(robot)
                 navigator = Navigator()
@@ -348,14 +348,14 @@ class HorizonPolicyTests(unittest.TestCase):
 
 class HorizonInterfaceTests(unittest.TestCase):
     def test_cli_mode_lookup(self):
-        self.assertIs(get_robot_class("reactive_fixed_h"), ReactiveFixedHRobot)
-        self.assertIs(get_robot_class("reactive_dynamic_h"), ReactiveDynamicHRobot)
+        self.assertIs(get_robot_class("anticipatory_fixed_h"), AnticipatoryFixedHRobot)
+        self.assertIs(get_robot_class("anticipatory_dynamic_h"), AnticipatoryDynamicHRobot)
 
     def test_cli_restart_preserves_the_requested_fixed_h(self):
         values = []
         events = [[pygame.event.Event(pygame.KEYDOWN, key=pygame.K_r)],
                   [pygame.event.Event(pygame.QUIT)]]
-        with patch.object(sys, "argv", ["main.py", "--robot", "reactive_fixed_h", "--fixed-h", "7.5"]):
+        with patch.object(sys, "argv", ["main.py", "--robot", "anticipatory_fixed_h", "--fixed-h", "7.5"]):
             with patch("main.View"), patch("main.RunRecorder") as recorder:
                 recorder.return_value.start.side_effect = lambda state: values.append(
                     state.robot.horizon.fixed_seconds)
@@ -364,8 +364,8 @@ class HorizonInterfaceTests(unittest.TestCase):
         self.assertEqual(values, [7.5, 7.5])
 
     def test_cli_rejects_invalid_fixed_h_and_incompatible_modes_before_opening_window(self):
-        cases = [("reactive_fixed_h", value) for value in ("0", "-2", "nan", "inf")]
-        cases.append(("reactive_dynamic_h", "4"))
+        cases = [("anticipatory_fixed_h", value) for value in ("0", "-2", "nan", "inf")]
+        cases.append(("anticipatory_dynamic_h", "4"))
         for robot, value in cases:
             with self.subTest(robot=robot, value=value):
                 with patch.object(sys, "argv", ["main.py", "--robot", robot, "--fixed-h", value]):
@@ -377,7 +377,7 @@ class HorizonInterfaceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             state = make_state()
             state.robot.horizon.fixed_seconds = 10
-            recorder = RunRecorder(dict(participant="T", robot="reactive_fixed_h", recipe="salad",
+            recorder = RunRecorder(dict(participant="T", robot="anticipatory_fixed_h", recipe="salad",
                                         seed=0, condition="test"), folder)
             recorder.start(state)
             state.player.carrying = "tomato"

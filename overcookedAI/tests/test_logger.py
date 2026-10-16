@@ -100,7 +100,7 @@ class LoggerTests(unittest.TestCase):
         self.assertIn("planned_path", diagnostics[-1])
 
     def test_reactive_delivery_records_diagnostics_and_zero_anticipation(self):
-        state = GameState(ReactiveRobot, seed=0, layout="reactive", recipe="salad")
+        state = GameState(ReactiveRobot, seed=0, layout="divided", recipe="salad")
         counters = [s for s in state.stations if s.owner == "shared"]
         counters[0].held = "chopped_tomato"
         counters[1].held = "chopped_lettuce"

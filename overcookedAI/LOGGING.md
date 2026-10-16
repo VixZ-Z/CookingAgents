@@ -18,8 +18,8 @@ Subsequent instrumentation and agent extensions are documented below.
 ## How to record a trial
 
 ```powershell
-python main.py --robot reactive_fixed_h --fixed-h 4 --participant P01 --condition fixed_h --seed 0
-python main.py --robot reactive_dynamic_h --participant P01 --condition dynamic_h --seed 0
+python main.py --robot anticipatory_fixed_h --fixed-h 4 --participant P01 --condition fixed_h --seed 0
+python main.py --robot anticipatory_dynamic_h --participant P01 --condition dynamic_h --seed 0
 python main.py --robot reactive --participant P01 --condition reactive --seed 0
 ```
 
@@ -74,7 +74,7 @@ Horizon actions can anticipate the delivery timing of an already visible item.
    prefetches near the end were still delivered before `game_end`
    (wasted effort = a robot `take`/`put` with `anticipating=1` and no later
    `serve` of that recipe).
-2. **Dynamic vs fixed `h`.** Compare `reactive_fixed_h` and `reactive_dynamic_h`
+2. **Dynamic vs fixed `h`.** Compare `anticipatory_fixed_h` and `anticipatory_dynamic_h`
    on the same `reactive` map. Use `horizon` rows to relate estimates and selected
    tasks to subsequent human handoff events. Estimate robot waiting from status
    intervals; the local cost's `handoff_lateness` is a prediction, not measured
@@ -113,7 +113,7 @@ CSV recording remains enabled by default. `--no-log` disables CSV writing;
 Reactive diagnostics also include `unreachable_targets`. Ordinary `--robot reactive`
 actions have `anticipating=0`; that policy does not set a contribution forecast
 or an autonomous takeover mode. Launch with
-`python main.py --robot reactive --layout reactive --seed 0 --debug-agent`.
+`python main.py --robot reactive --layout divided --seed 0 --debug-agent`.
 
 ## Human action transition learning (16 October 2026)
 
@@ -147,7 +147,7 @@ The earlier logging snapshot in this document predates this instrumentation.
 
 ## Fixed/dynamic h diagnostics (16 October 2026)
 
-`reactive_fixed_h` and `reactive_dynamic_h` emit `action=h_config` once at run
+`anticipatory_fixed_h` and `anticipatory_dynamic_h` emit `action=h_config` once at run
 start, including the actual numeric `--fixed-h` setting. Restarting begins a new
 run with the same configured setting. `action=horizon` rows record estimates at
 2 Hz, plus changes of target, action, item, evidence source, unknown state or
@@ -168,6 +168,67 @@ supplied cooking work has no forecast source. `h_config`, `horizon`, transition
 and diagnostic rows do not increase `robot_actions` or
 `robot_anticipating_actions`; those counters retain the cooking-action definition.
 CSV columns and summary schema are unchanged.
+
+## Experiment measures (16 October 2026)
+
+The layout `reactive` is now `divided` and the timing robots are
+`anticipatory_fixed_h` / `anticipatory_dynamic_h` (`reactive` is the baseline).
+New event rows (all on the divided kitchen unless noted):
+
+* `run_config` (once): git `commit`, key `parameters` (speeds, chop/pot time, fixed h,
+  h interaction time and lateness weight, transition thresholds, order timing),
+  `fixed_h_used`, `initial_orders` and a `schedule_hash` to confirm two runs had the
+  same starting orders.
+* `handoff` (robot `take` of an item the human put on a shared counter): `dwell`
+  (human put to robot take, seconds), `robot_arrival_minus_put` (negative = the robot
+  was already at the counter when the item arrived, positive = the human's item was
+  waiting for the robot) and `robot_ready` (1 when arrival was not after the put).
+* `h_outcome` (h robots; at each human put/take on a shared counter): the estimates
+  made in the last 15 s are compared with the real time to that event. `estimates` is
+  how many there were, `right_station` how many named the station actually used,
+  `mae` and `bias` are the error in seconds (estimate minus actual) over those, and
+  `last_source` is the evidence behind the latest estimate.
+* `pace` (dynamic h; whenever a new step has been observed): per-situation handling
+  time (`seconds`, `samples`), the chop factor and the default used before any
+  observation.
+
+New `summary.csv` columns: `handoffs`, `dwell_mean`, `robot_arrival_mean`,
+`robot_late_share`, `h_samples`, `h_mae`, `h_bias`, `human_distance_px`,
+`human_still_s` (time moving below 5 px/s, so it includes chopping in place) and
+`robot_wait_s` (time with no robot task). If an older `summary.csv` has a different
+header it is renamed to `summary_old_<run id>.csv` and a new file is started.
+
+Analysis notes: use `dwell_mean`, `robot_late_share` and `h_mae` as the main measures
+of coordination and timing quality, per participant and condition; score and serves
+per minute also depend on player skill. `h_mae` only covers estimates that named the
+right station, so also report `right_station / estimates` from the `h_outcome` rows.
+`pace` rows are written for both h robots, but only dynamic h uses them; fixed h
+ignores the observed pace, so its h error should grow when the player's pace differs
+from the fixed value.
+
+## When files are written, and report figures
+
+`logs/<run>.csv` is created when the game starts and rows are written during play.
+The run is closed, and its row added to `logs/summary.csv`, in these cases:
+
+* the 180 s clock reaches zero: `game_end` with `completed` (summary `completed=1`);
+* R (restart) mid-game, or ESC / closing the window: `game_end` with `aborted`
+  (summary `completed=0`).
+
+Each run is closed once, so pressing R or ESC after the game has ended adds nothing.
+If the program is killed or crashes, the run is not closed: the file may be missing
+its last rows, has no `game_end` row, and gets no summary row.
+
+Figures and a table for the report:
+
+```powershell
+pip install -r requirements-analysis.txt
+python analyze.py                # logs/ -> figures/
+python analyze.py --group condition --include-aborted
+```
+
+By default only completed games are used and participant `dev` is excluded.
+It writes `fig1_outcomes` to `fig7_human_heatmap` (png) and `summary_by_condition.csv`.
 
 ## Known limitations
 * Recorded `h` values and row frequencies are conditional estimates, not

@@ -11,7 +11,7 @@ from robot_tasks import Task
 from .robot import ReactiveRobot
 
 
-class HorizonReactiveRobot(ReactiveRobot):
+class HorizonRobot(ReactiveRobot):
     h_mode = None
 
     def __init__(self, state):
@@ -112,9 +112,9 @@ class HorizonReactiveRobot(ReactiveRobot):
         super().update_ai(dt, state)
 
 
-class ReactiveFixedHRobot(HorizonReactiveRobot):
+class AnticipatoryFixedHRobot(HorizonRobot):
     h_mode = "fixed"
 
 
-class ReactiveDynamicHRobot(HorizonReactiveRobot):
+class AnticipatoryDynamicHRobot(HorizonRobot):
     h_mode = "dynamic"

@@ -211,7 +211,7 @@ class View:
             pygame.draw.line(s, (195, 185, 165), (0, y), (C.WIDTH, y))
         for wall in state.walls:
             pygame.draw.rect(s, COUNTER_EDGE, wall)
-        if state.layout.name == "reactive":
+        if state.layout.name == "divided":
             s.blit(self.small.render("HUMAN: prepare and deliver", True, BLUE), (180, 95))
             s.blit(self.small.render("ROBOT: receive, finish and serve", True,
                                     OWNER_EDGE["robot"]), (640, 95))
@@ -236,7 +236,7 @@ class View:
             order = state.priority_order
             info[2] = (f"Priority: {order.name} ({order.time_left:.0f}s) | yellow order *"
                        if order else "Waiting for the next order")
-        elif robot and state.layout.name == "reactive":
+        elif robot and state.layout.name == "divided":
             info[1] = (f"Target: {robot.task.station.label} | Recipe: {robot.recipe}"
                        if robot.task else "Deliver raw or chopped ingredients to purple counters")
             info[2] = "Reactive: delivered items only | R: restart | ESC: exit"

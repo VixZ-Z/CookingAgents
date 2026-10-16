@@ -13,9 +13,11 @@ logging code. See LOGGING.md for the column dictionary.
 from __future__ import annotations
 
 import csv
+import hashlib
 import json
 import os
 import re
+import subprocess
 import time
 
 import pygame
@@ -31,7 +33,12 @@ SUMMARY_FIELDS = ["run_id", "participant", "condition", "robot", "layout",
                   "recipe", "seed", "completed", "duration", "score",
                   "served_human", "served_robot", "salads", "soups",
                   "expired", "first_serve_t", "robot_actions",
-                  "robot_anticipating_actions"]
+                  "robot_anticipating_actions",
+                  "handoffs", "dwell_mean", "robot_arrival_mean", "robot_late_share",
+                  "h_samples", "h_mae", "h_bias",
+                  "human_distance_px", "human_still_s", "robot_wait_s"]
+H_OUTCOME_WINDOW = 15.0       # seconds of estimates scored against one human handoff event
+HANDOFF_REACH = 50            # same reach used to attribute robot interactions
 
 POS_PERIOD = 1.0 / 5          # position samples at 5 Hz of game time
 # Forecast-based contributions, including preparation before a predicted handoff.
@@ -76,12 +83,40 @@ class RunRecorder:
         self._stats = {"served_human": 0, "served_robot": 0, "salads": 0,
                        "soups": 0, "expired": 0, "first_serve_t": "",
                        "robot_actions": 0, "robot_anticipating_actions": 0}
+        self._pending_handoffs = {}      # station index -> (item, human put time)
+        self._robot_near = {}            # shared station index -> time the robot arrived
+        self._handoffs = []              # (dwell, robot arrival minus human put)
+        self._h_window = []              # recent (t, remaining, target, source) estimates
+        self._h_errors = []              # signed errors of estimates that named the right station
+        self._last_pace_revision = 0
+        self._human_distance = self._human_still = self._robot_wait = 0.0
+        self._human_pos = None
         for order in state.orders:
             self._log(0.0, "order_new", "system", item=order.kind,
                       order_id=self._oid(order))
+        self._log(0.0, "run_config", "system", info=json.dumps(self._run_config(state)))
         if hasattr(state.robot, "horizon"):
             self._log(0.0, "h_config", "system", info=json.dumps(state.robot.horizon.snapshot(state)))
         self._prev = None
+
+    def _run_config(self, state) -> dict:
+        """Parameters needed to reproduce and compare runs."""
+        import config as C
+        orders = [(o.kind, round(o.time_left, 1)) for o in state.orders]
+        try:
+            commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True,
+                                    text=True, timeout=2).stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            commit = ""
+        names = ("GAME_TIME", "PLAYER_SPEED", "ROBOT_SPEED", "CHOP_TIME", "POT_TIME",
+                 "FIXED_H_SECONDS", "H_INTERACTION_SECONDS", "H_HANDOFF_LATENESS_WEIGHT",
+                 "TRANSITION_MIN_SAMPLES", "TRANSITION_MIN_PROBABILITY", "HUMAN_IDLE_TIMEOUT",
+                 "ORDER_TTL", "ORDER_INTERVAL", "MAX_ORDERS")
+        horizon = getattr(state.robot, "horizon", None)
+        return dict(commit=commit, parameters={n: getattr(C, n) for n in names},
+                    fixed_h_used=horizon.fixed_seconds if horizon and horizon.mode == "fixed" else None,
+                    initial_orders=orders,
+                    schedule_hash=hashlib.md5(json.dumps(orders).encode()).hexdigest()[:8])
 
     def finish(self, state, completed: bool) -> None:
         """Close the current run and append its summary row."""
@@ -93,10 +128,28 @@ class RunRecorder:
         self._file.close()
         self._file = None
         path = os.path.join(self.log_dir, "summary.csv")
+        if os.path.exists(path):
+            with open(path, newline="", encoding="utf-8") as f:
+                header = next(csv.reader(f), [])
+            if header != SUMMARY_FIELDS:        # keep rows of an older schema aligned
+                os.replace(path, os.path.join(self.log_dir, f"summary_old_{self.run_id}.csv"))
         new = not os.path.exists(path)
         row = {k: self.meta.get(k, "") for k in SUMMARY_FIELDS}
+        dwell = [d for d, _ in self._handoffs]
+        arrival = [a for _, a in self._handoffs]
+        errors = self._h_errors
         row.update(self._stats, completed=int(completed),
-                   duration=round(t, 1), score=state.score)
+                   duration=round(t, 1), score=state.score,
+                   handoffs=len(self._handoffs),
+                   dwell_mean=round(sum(dwell) / len(dwell), 3) if dwell else "",
+                   robot_arrival_mean=round(sum(arrival) / len(arrival), 3) if arrival else "",
+                   robot_late_share=round(sum(a > 0 for a in arrival) / len(arrival), 3) if arrival else "",
+                   h_samples=len(errors),
+                   h_mae=round(sum(abs(e) for e in errors) / len(errors), 3) if errors else "",
+                   h_bias=round(sum(errors) / len(errors), 3) if errors else "",
+                   human_distance_px=round(self._human_distance, 1),
+                   human_still_s=round(self._human_still, 2),
+                   robot_wait_s=round(self._robot_wait, 2))
         with open(path, "a", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, SUMMARY_FIELDS)
             if new:
@@ -171,6 +224,7 @@ class RunRecorder:
             sname = self._name(state, st)
             if before_item is None:
                 self._log(t, "take", name, after_item, sname)
+                self._handoff_event(state, t, name, "take", after_item, st)
             elif after_item is None:
                 if st is not None and st.kind == "serve" and served_order:
                     self._served(t, name, before_item, sname, served_order)
@@ -179,8 +233,11 @@ class RunRecorder:
                     self._log(t, "trash", name, before_item, sname)
                 else:
                     self._log(t, "put", name, before_item, sname)
+                    self._handoff_event(state, t, name, "put", before_item, st)
             else:
                 self._log(t, "combine", name, after_item, sname)
+
+        self._track_activity(state, dt, robot)
 
         # Robot status text (what the robot says it is doing) ------------
         if robot:
@@ -192,6 +249,12 @@ class RunRecorder:
                 if key != self._last_horizon_key or t - self._last_horizon_time >= 0.5:
                     self._last_horizon_key, self._last_horizon_time = key, t
                     self._log(t, "horizon", "robot", info=json.dumps(data))
+                    if data["remaining"] is not None and data["target"] is not None:
+                        self._h_window.append((t, data["remaining"], data["target"], data["source"]))
+                pace = robot.horizon.pace
+                if pace.revision != self._last_pace_revision:
+                    self._last_pace_revision = pace.revision
+                    self._log(t, "pace", "robot", info=json.dumps(pace.snapshot()))
             transitions = getattr(robot, "transition_model", None)
             if transitions and transitions.revision != self._last_transition_revision:
                 self._last_transition_revision = transitions.revision
@@ -220,6 +283,67 @@ class RunRecorder:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+    def _track_activity(self, state, dt, robot) -> None:
+        """Human walking/standing time and the robot's presence at each handoff counter."""
+        pos = pygame.Vector2(state.player.pos)
+        if self._human_pos is not None and dt > 0:
+            moved = pos.distance_to(self._human_pos)
+            self._human_distance += moved
+            if moved / dt < 5:              # includes chopping in place
+                self._human_still += dt
+        self._human_pos = pos
+        if robot is None:
+            return
+        if getattr(robot, "enabled", True) and hasattr(robot, "task") and robot.task is None:
+            self._robot_wait += dt
+        reach = robot.rect.inflate(HANDOFF_REACH, HANDOFF_REACH)
+        for index, st in enumerate(state.stations):
+            if st.owner != "shared":
+                continue
+            if reach.colliderect(st.rect):
+                self._robot_near.setdefault(index, state.elapsed)
+            else:
+                self._robot_near.pop(index, None)
+
+    def _handoff_event(self, state, t, actor, kind, item, station) -> None:
+        """Pair human placements on a shared counter with the robot's pickup, and
+        score the horizon estimates made before each human handoff action."""
+        if station is None or station.owner != "shared":
+            return
+        index = state.stations.index(station)
+        if actor == "human":
+            if kind == "put":
+                self._pending_handoffs[index] = (item, t)
+            else:
+                self._pending_handoffs.pop(index, None)
+            self._h_outcome(state, t, kind, item, index)
+        elif kind == "take" and index in self._pending_handoffs:
+            put_item, put_t = self._pending_handoffs.pop(index)
+            arrival = self._robot_near.get(index, t) - put_t
+            dwell = t - put_t
+            self._handoffs.append((dwell, arrival))
+            self._log(t, "handoff", "robot", put_item, self._name(state, station),
+                      info=json.dumps(dict(human_put_t=round(put_t, 3), robot_take_t=round(t, 3),
+                                           dwell=round(dwell, 3),
+                                           robot_arrival_minus_put=round(arrival, 3),
+                                           robot_ready=int(arrival <= 0))))
+
+    def _h_outcome(self, state, t, kind, item, index) -> None:
+        window = [w for w in self._h_window if t - w[0] <= H_OUTCOME_WINDOW]
+        self._h_window = []
+        if not hasattr(state.robot, "horizon"):
+            return
+        # Estimate error = predicted remaining - actual remaining, only for estimates
+        # that named the station the human actually used.
+        errors = [remaining - (t - when) for when, remaining, target, _ in window if target == index]
+        self._h_errors.extend(errors)
+        self._log(t, "h_outcome", "system", item, self._name(state, state.stations[index]),
+                  info=json.dumps(dict(
+                      action=kind, estimates=len(window), right_station=len(errors),
+                      mae=round(sum(map(abs, errors)) / len(errors), 3) if errors else None,
+                      bias=round(sum(errors) / len(errors), 3) if errors else None,
+                      last_source=window[-1][3] if window else None)))
+
     def _served(self, t, actor, item, station, order) -> None:
         self._stats["served_" + actor] += 1
         self._stats["salads" if item == "salad" else "soups"] += 1
