@@ -1,8 +1,8 @@
 """Observable goal inference for the shared-kitchen pilot.
 
-Rules use carried items, station contents and movement. A starter-frequency
-model learns the first observed human ingredient per order. No forgetting or
-full action-sequence learning; intent confidence values are heuristic scores.
+Rules use carried items, station contents and movement. Starter frequencies and
+first-order action transitions are learned per recipe. No forgetting or timing
+horizon; rule confidence is heuristic, learned confidence is row frequency.
 """
 from __future__ import annotations
 
@@ -13,6 +13,7 @@ import pygame
 import config as C
 from game import COMBOS, Station, chop_name
 from navigation import approach_point
+from human_transitions import HumanTransitionModel
 
 
 def ingredient_name(item):
@@ -41,10 +42,15 @@ class HumanIntent:
     confidence: float
     velocity: pygame.Vector2
     projected_position: pygame.Vector2
+    source: str = "rules"
+    samples: int = 0
 
     @property
     def description(self):
         destination = self.goal.label if self.goal else "unknown"
+        if self.source == "transition":
+            return (f"Human next: {self.action} -> {destination} "
+                    f"({self.confidence:.0%}, n={self.samples}, learned)")
         return f"Human: {self.action} -> {destination} ({self.confidence:.0%})"
 
 
@@ -57,6 +63,45 @@ class HumanIntentModel:
         self.last_starter = {}
         # Keep order references: equal recipes/deadlines are still distinct trials.
         self.observed_orders = []
+        self.transitions = HumanTransitionModel()
+
+    def _transition_goals(self, state, available):
+        prediction = self.transitions.prediction
+        if (prediction is None or prediction.samples < C.TRANSITION_MIN_SAMPLES
+                or prediction.probability < C.TRANSITION_MIN_PROBABILITY):
+            return []
+        target, carried = prediction.target, state.player.carrying
+        candidates = [s for s in available if s.kind == target.station_kind]
+
+        def feasible(station):
+            if target.action == "take" and carried is None:
+                return (station.kind == "crate_" + target.item
+                        or (station.kind == "plates" and target.item == "plate")
+                        or (station.kind in ("board", "counter") and station.held == target.item))
+            if target.action == "put" and carried == target.item:
+                return station.held is None and (
+                    station.kind == "counter" or (station.kind == "board"
+                    and (chop_name(carried) or carried.startswith("chopped_"))))
+            if target.action == "chop":
+                return (carried is None and station.kind == "board"
+                        and chop_name(station.held) == target.item)
+            if target.action == "add_to_pot":
+                return (carried == target.item and station.kind == "pot" and not station.ready
+                        and len(station.contents) < 2 and carried not in station.contents)
+            if target.action == "scoop":
+                return (carried == "plate" and station.kind == "pot"
+                        and set(station.contents) == {"chopped_tomato", "chopped_onion"})
+            if target.action == "combine":
+                return (station.kind in ("board", "counter") and carried and station.held
+                        and COMBOS.get(frozenset((carried, station.held))) == target.item)
+            if target.action == "serve":
+                return (carried == target.item and station.kind == "serve"
+                        and any(o.kind == carried and o.time_left > 0 for o in state.orders))
+            if target.action == "trash":
+                return carried == target.item and station.kind == "trash"
+            return False
+
+        return [s for s in candidates if feasible(s)]
 
     def _learn_start(self, state, ingredient):
         order = state.priority_order
@@ -79,6 +124,9 @@ class HumanIntentModel:
         return StarterPrediction(ingredient, counts[ingredient], total, recipe)
 
     def observe(self, state, dt):
+        previous_cursor = self.transitions.cursor
+        self.transitions.update(state)
+        fresh_action = self.transitions.cursor != previous_cursor
         human = state.player
         position = pygame.Vector2(human.rect.center)
         velocity = pygame.Vector2()
@@ -139,6 +187,20 @@ class HumanIntentModel:
             return delta.length() - 75 * alignment
 
         goal = min(candidates, key=score) if candidates else None
+        source, samples = "rules", 0
+        learned_goals = self._transition_goals(state, available)
+        if learned_goals:
+            learned_goal = min(learned_goals, key=score)
+            delta = approach_point(learned_goal) - position
+            # Current motion away from a forecast is stronger evidence than history.
+            if not (not fresh_action and heading.length_squared() and delta.length_squared()
+                    and heading.dot(delta.normalize()) < -0.3):
+                prediction = self.transitions.prediction
+                goal = learned_goal
+                action = prediction.target.description
+                confidence, samples = prediction.probability, prediction.samples
+                ingredient = ingredient_name(prediction.target.item) or ingredient
+                source = "transition"
         if action == "chop" and goal:
             ingredient = goal.held
         if action == "approach" and goal and goal.kind.startswith("crate_"):
@@ -151,4 +213,4 @@ class HumanIntentModel:
             if delta.length() < velocity.length() * 0.5:
                 projected = approach_point(goal)
         return HumanIntent(goal, action, ingredient, confidence if goal else 0.0,
-                           velocity, projected)
+                           velocity, projected, source, samples)

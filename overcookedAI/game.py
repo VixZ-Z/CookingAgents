@@ -12,6 +12,7 @@ import pygame
 
 import config as C
 from layouts import get_layout
+from human_transitions import ActionSymbol, HumanActionEvent
 
 CRATE_MAP = {"crate_tomato": "tomato", "crate_onion": "onion",
              "crate_lettuce": "lettuce"}
@@ -106,7 +107,7 @@ def interaction_target(player, stations, who="human"):
                .distance_to(s.rect.center))
 
 
-def handle_counter_combinations(actor, station):
+def handle_counter_combinations(actor, station, state=None):
     if station.kind not in ("counter", "board"):
         return False
     a, b = actor.carrying, station.held
@@ -116,6 +117,8 @@ def handle_counter_combinations(actor, station):
     if result:
         actor.carrying = result
         station.held = None
+        if state is not None and actor is state.player:
+            state.record_human_action("combine", result, station)
         return True
     return False
 
@@ -124,6 +127,9 @@ def interact(actor, station, state):
     """E key / robot action. `state` provides orders and score."""
     if station is None:
         return
+
+    before_item = actor.carrying
+    context = state.priority_order
 
     if station.kind == "trash":
         actor.carrying = None
@@ -167,9 +173,23 @@ def interact(actor, station, state):
                         key=lambda o: o.time_left, default=None)
             if order is None:
                 return              # keep the dish until a matching order
+            context = order
             state.orders.remove(order)
             state.score += C.SCORE_DELIVERY + max(0, int(order.time_left))
             actor.carrying = None
+
+    if actor is state.player and before_item != actor.carrying:
+        if station.kind == "serve":
+            action, item = "serve", before_item
+        elif station.kind == "trash":
+            action, item = "trash", before_item
+        elif station.kind == "pot":
+            action = "scoop" if before_item == "plate" else "add_to_pot"
+            item = actor.carrying if action == "scoop" else before_item
+        else:
+            action = "take" if before_item is None else "put"
+            item = actor.carrying if action == "take" else before_item
+        state.record_human_action(action, item, station, order=context)
 
 
 # ----------------------------------------------------------------------
@@ -184,12 +204,14 @@ class GameState:
         self.order_kinds = [recipe] if recipe else C.ORDER_KINDS
         self.layout = get_layout(layout)
         self.swapped = False
+        self.walls = [pygame.Rect(*wall) for wall in self.layout.walls]
         self.stations = [
             Station(pygame.Rect(x, y, C.TILE, C.TILE), kind, label,
                     owner=(rest[0] if rest else None))
             for x, y, kind, label, *rest in self.layout.stations]
         self.player = Player(*self.layout.player_start)
         self.human_activity_revision = 0
+        self.human_actions = []
         self.orders: list[Order] = []
         self.score = 0
         self.game_time = float(C.GAME_TIME)
@@ -234,8 +256,16 @@ class GameState:
     def player_interact(self):
         self.human_activity_revision += 1
         target = interaction_target(self.player, self.stations)
-        if not (target and handle_counter_combinations(self.player, target)):
+        if not (target and handle_counter_combinations(self.player, target, self)):
             interact(self.player, target, self)
+
+    def record_human_action(self, action, item, station, order=None, time=None):
+        """Record successful human actions only, independently of CSV logging."""
+        order = order if order is not None else self.priority_order
+        index = next(i for i, candidate in enumerate(self.stations) if candidate is station)
+        self.human_actions.append(HumanActionEvent(
+            ActionSymbol(action, item, station.kind), order.kind if order else None,
+            order, self.elapsed if time is None else time, index))
 
     def update(self, dt, move, chopping):
         """Advance the game by dt seconds. `move` = (dx, dy) input."""
@@ -244,7 +274,7 @@ class GameState:
         if any(move):
             # Attempts to move count too, including movement blocked by an obstacle.
             self.human_activity_revision += 1
-        obstacles = [s.rect for s in self.stations]
+        obstacles = [s.rect for s in self.stations] + self.walls
         if self.robot and getattr(self.robot, "avoids_human", False):
             obstacles.append(self.robot.rect)
         self.player.update(dt, move, obstacles)
@@ -256,6 +286,7 @@ class GameState:
             if target.progress >= C.CHOP_TIME:
                 target.held = chop_name(target.held)
                 target.progress = 0
+                self.record_human_action("chop", target.held, target, time=self.elapsed + dt)
         for st in self.stations:
             if st.kind == "pot" and len(st.contents) == 2 and not st.ready:
                 st.progress += dt

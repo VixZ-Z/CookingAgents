@@ -1,5 +1,151 @@
 # Changes made to CookingAgents
 
+## Reactive fixed/dynamic h modes (16 October 2026)
+
+- Added `--robot reactive_fixed_h` and `--robot reactive_dynamic_h`. Both use the
+  existing separated `reactive` map, cooking policy, human transition model and
+  initial order schedule. The ordinary `reactive` baseline stays observation-only.
+- Added `human_horizon.py`: `h` estimates remaining game time until a human
+  placement or pickup at a shared counter. Fixed h counts down after observed
+  human actions; movement and repeated frames never restart it. The default is
+  4 seconds, configurable with `--fixed-h`, and preserved on R.
+- Dynamic h uses collision-aware route length, observed walking speed, remaining
+  chopping and interaction estimates. Carried items, observed board work and
+  sufficiently supported learned transitions identify a plausible handoff.
+  Missing evidence or inaccessible handoffs produce `unknown`. Estimates are
+  conditional on the human continuing the task; there is no forgetting.
+- Added `reactive_robot/horizon.py`. Available cooking tasks take precedence.
+  Otherwise an expected ingredient delivery can trigger either one plate fetched
+  and stored in the robot workspace, or an approach to the predicted handoff.
+  Candidate durations T use the local score `max(0, h-T) + 2*max(0, T-h)`.
+  Supplies remain unavailable until actual delivery. Incoming plated or finished
+  dishes do not trigger an extra plate, and a prefetched plate cannot cause
+  premature salad assembly with only one ingredient.
+- Both modes can finish raw/chopped salad and soup deliveries without fetching
+  human-side ingredients or using the anticipatory agent's inactivity takeover.
+  These timing-assisted extensions perform forecast-based preparation, while
+  ordinary `reactive` remains the strict reactive control.
+- Added live h/evidence to the UI, CLI validation, restart preservation and CSV
+  `h_config`/`horizon` JSON diagnostics with parameter values and candidate costs.
+  Early preparation uses `anticipating=1`; supplied cooking work remains 0.
+  Diagnostic rows do not count as cooking actions.
+- Added behavioural checks for countdowns, dynamic routes and chopping, observed
+  speed, unknown evidence, cost-dependent choices, available-work priority,
+  prefetched plates, moving-human deliveries, both recipes, CLI and logging.
+- All **166 tests** pass, including the existing reactive, anticipatory, navigation
+  and transition-learning checks.
+- The 4-second default, 0.2-second interaction estimate and lateness weight 2 are
+  pilot parameters requiring calibration. The cost is a local proxy, not measured
+  human waiting or global expected-cost optimisation. Shared-kitchen anticipatory
+  h integration and the controlled experiment remain future work.
+
+Launch from `overcookedAI/`:
+
+```powershell
+python main.py --robot reactive_fixed_h --fixed-h 4 --seed 0
+python main.py --robot reactive_dynamic_h --seed 0
+```
+
+## Human action transition learning (16 October 2026)
+
+- Added `overcookedAI/human_transitions.py`, shared by the reactive and anticipatory
+  agents. It learns `P(next action | previous action, recipe)` from cumulative
+  counts over action, item and station-type symbols.
+- Game rules now record successful human pickups, placements, completed chopping,
+  pot additions, scooping, combinations, serving and discarding. Failed actions,
+  idle frames and robot actions do not train the model. Multiple human actions
+  between robot updates are consumed in order, without duplicate frame samples.
+- Recipe histories are separate. Order identity, serving and priority-context
+  interruptions prevent unrelated episodes from being joined. R clears the
+  event stream and history for a fresh game.
+- The anticipatory agent uses sufficiently supported, feasible learned next
+  actions to infer the next human station and complementary ingredient. Defaults
+  require two source-action observations and a most likely outcome of at least
+  60%. Current physical evidence can override learned predictions.
+- The reactive agent learns the same model for observation and comparison only;
+  task selection remains based on currently delivered supplies and orders.
+- Added learned forecasts to the UI and `human_transition` JSON updates to CSV
+  logs. Forecast evaluation happens before incorporating the observed outcome.
+  Transition rows do not count as robot cooking actions.
+- Added 26 tests covering normalised probabilities, recipe and episode boundaries,
+  prediction updates, no training from robot actions, real human routines,
+  anticipatory policy use, reactive policy independence and logging.
+- At that stage, all **139 tests** passed. Fixed/dynamic `h`, forgetting and expected decision-cost
+  optimisation are outside this change. This is a first-order model, not a model
+  conditioned on an entire action history.
+
+## Working divided-kitchen reactive agent (13 October 2026)
+
+Implemented `ReactiveRobot` for `--layout reactive` without altering the map.
+The human supplies raw or chopped ingredients through either shared counter.
+The robot collects, chops, assembles salads, cooks soup, plates and serves using
+its own equipment. It continues across orders and responds to changing urgency,
+withdrawn deliveries, duplicates and blocked approaches. Fully supplied recipes
+are prioritized by deadline; otherwise it prepares available ingredients for
+the earliest actionable recipe. A lone tomato is not plated before the salad
+ingredients are available, so it remains usable for soup if onion arrives.
+
+No human intent recognition, starter learning, predicted movement or autonomous
+ingredient fetching is used. The existing collision-aware navigator is reused,
+with right-side approaches to the handoff counters. Task execution is shared
+with the anticipatory agent through `robot_tasks.py`; anticipatory planning
+remains separate. Tasks, targets and routes appear on screen. Existing CSV
+diagnostics and `--debug-agent` support the reactive robot, whose logged actions
+always have `anticipating=0`.
+
+Launch from `overcookedAI/`:
+`python main.py --robot reactive --layout reactive --seed 0`.
+
+## Unexpected stopping and decision diagnostics (13 October 2026)
+
+Fixed a moving-human replan loop that repeatedly consumed the zero-length start
+waypoint without advancing. Route starts now use the continuous agent position;
+zero-length waypoints are consumed before movement, and a moving human does not
+invalidate a still-clear route every frame. Safety-buffer fallback considers the
+continuous position as well as the visible body. Fractional contact bookkeeping
+is aligned to the unchanged body only when needed to leave a valid contact.
+
+Station selection now checks reachability with cached route checks. Unreachable
+stored ingredients no longer suppress reachable preparation. A retained task
+with no navigation progress is reconsidered after 0.7 seconds, human reservations
+allow selecting other work, and blocked owned/reassignment boards no longer
+short-circuit the rest of the planner. An inaccessible empty soup pot can be
+reselected; started batches remain together. Removed stations invalidate tasks.
+
+Added transition-based JSON diagnostics to the existing CSV event log and
+optional terminal diagnostics via `--debug-agent`. Regression tests cover moving
+humans, subpixel counter contact, unreachable targets and inventory, alternative
+tasks, invalidation, resumption, and distinguishing intentional waits from failed
+routes. Existing collision, recovery, learning and collaboration tests remain.
+
+## Navigation contact recovery (13 October 2026)
+
+Fixed anticipatory-agent deadlocks at walls, furniture and human contact.
+The padded navigation geometry previously rejected valid starts at obstacle
+edges, sideways recovery was excluded, and the regular grid could miss narrow
+escape lanes. Navigation now falls back to full-body collision geometry when
+the start is inside the comfort buffer, permits edge sliding, and includes the
+current position's row and column in A*. Rounded movement is checked against
+physical obstacles before applying it. The robot never teleports or crosses
+furniture or the human.
+
+Sideways contact recovery is allowed. Failed routes are retried every 0.35 seconds
+or immediately when obstacle geometry changes. No progress for 0.7 seconds is
+reported as a blocked path; the current task remains available for resumption
+and normal task validation continues. Truly trapped robots wait safely.
+Ten new regression tests cover corners, each counter edge, human pressure,
+temporary blockage, bounded retries and task completion after escape.
+
+## Separated reactive map (13 October 2026)
+
+Added `--layout reactive` with physically separated human and robot workspaces
+and two shared one-item handoff counters. All ingredient crates are on the human
+side; the robot side supports chopping delivered raw ingredients, assembling
+salads, cooking soup, plating and serving. Walls participate in player collision
+and A* navigation and are shown in the renderer. Preview with
+`python main.py --robot none --layout reactive --seed 0 --no-log` from
+`overcookedAI/`. The reactive policy was implemented subsequently as described above.
+
 Status as of 13 October 2026. This document describes the features added while
 developing the human–robot collaboration prototype in `overcookedAI/`.
 
@@ -130,7 +276,7 @@ python main.py --robot anticipatory --recipe soup --seed 0
 | `overcookedAI/tests/` | Behavioural tests that run without opening a window. |
 | `README.md`, `overcookedAI/README.md` | Documentation of the structure, setup, and current features. |
 
-The latest code verification passed all **65 tests**. These cover complete salad
+At that stage, code verification passed all **65 tests**. These cover complete salad
 and soup preparation, a moving human, changes in priority and division of work,
 incorrect forecasts, collisions, startup after 0.5 seconds, and restart. Additional
 checks cover the 5-second inactivity threshold, activity resets, autonomous order
@@ -145,16 +291,17 @@ python -B -m unittest discover -s tests -v
 
 ## 9. Remaining work
 
-- A complete reactive agent for comparison in the same kitchen with the same
-  movement rules; `reactive_robot/` currently remains a stub.
-- Learning full human action sequences; the current model learns only the first
-  ingredient choice.
-- Fixed and dynamic `h`, representing the estimated time until the human next
-  changes the shared counter. This should not be confused with the short
-  projection of character movement.
-- Experimental CSV logging, collaboration metrics, a routine-change protocol,
-  the experiment, and the research report. The current tests do not replace an
-  HRC experiment.
+- A controlled comparison using the same kitchen layout for both policies;
+  the reactive robot currently uses the divided kitchen and the anticipatory
+  robot uses the shared kitchen.
+- Higher-order human sequence models; the current agent learns starter choices
+  and first-order transitions, as described in the 16 October update above.
+- Integration of fixed/dynamic `h` with the shared-kitchen anticipatory agent.
+  The separated reactive variants above already estimate time until a human
+  changes the shared counter; this differs from short movement projection.
+- Calibration of timing/cost parameters, collaboration metrics, a routine-change
+  protocol, the experiment, and the research report. CSV recording is implemented;
+  the current tests do not replace an HRC experiment.
 - Refining and describing the healthcare scenario, such as helping an older
   adult or a person with limited mobility prepare meals. This currently
   motivates the project rather than introducing separate medical game mechanics.

@@ -209,6 +209,12 @@ class View:
             pygame.draw.line(s, (195, 185, 165), (x, 80), (x, 595))
         for y in range(80, 595, 80):
             pygame.draw.line(s, (195, 185, 165), (0, y), (C.WIDTH, y))
+        for wall in state.walls:
+            pygame.draw.rect(s, COUNTER_EDGE, wall)
+        if state.layout.name == "reactive":
+            s.blit(self.small.render("HUMAN: prepare and deliver", True, BLUE), (180, 95))
+            s.blit(self.small.render("ROBOT: receive, finish and serve", True,
+                                    OWNER_EDGE["robot"]), (640, 95))
         for st in state.stations:
             self.station(st)
         robot = state.robot
@@ -230,6 +236,14 @@ class View:
             order = state.priority_order
             info[2] = (f"Priority: {order.name} ({order.time_left:.0f}s) | yellow order *"
                        if order else "Waiting for the next order")
+        elif robot and state.layout.name == "reactive":
+            info[1] = (f"Target: {robot.task.station.label} | Recipe: {robot.recipe}"
+                       if robot.task else "Deliver raw or chopped ingredients to purple counters")
+            info[2] = "Reactive: delivered items only | R: restart | ESC: exit"
+            if robot.transition_model.prediction:
+                info[2] = "Observe only | " + robot.transition_model.prediction.description
+            if hasattr(robot, "horizon"):
+                info[2] = robot.horizon_description
         for i, line in enumerate(info):
             while self.small.size(line)[0] > C.WIDTH - 585:
                 line = line[:-4] + "..."
