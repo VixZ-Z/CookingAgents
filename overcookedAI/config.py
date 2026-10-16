@@ -24,8 +24,8 @@ PLAY_AREA = (0, 90, WIDTH, 505)          # x, y, w, h the agents may walk in
 COLLAB_ROBOT_SPEED = 120                 # slower than the scripted robot; tune
 SWAP_TIME = 90                           # seconds, crate swap in "swap" layout
 
-CHOP_TIME = 1.5
-POT_TIME = 5.0
+CHOP_TIME = 0.2
+POT_TIME = 0.5
 
 INITIAL_ORDERS = 3
 MAX_ORDERS = 4

@@ -230,12 +230,24 @@ Figures and a table for the report:
 ```powershell
 pip install -r requirements-analysis.txt
 python analyze.py                # logs/ -> figures/
-python analyze.py --group condition --include-aborted
+python analyze.py --include-aborted
 ```
 
-By default only completed games are used (add `--include-aborted` for the rest);
-all participants are included.
-It writes `fig1_outcomes` to `fig7_human_heatmap` (png) and `summary_by_condition.csv`.
+Games are grouped by robot (the `condition` label is ignored). By default only
+completed games are used (add `--include-aborted` for the rest); all participants
+are included. It writes:
+
+| File | Question it answers |
+| --- | --- |
+| `fig1_team_performance.png` | Final score, orders per minute and order-to-serve time per robot |
+| `fig2_handoff_timing.png` | Robot arrival at the counter minus human placement, per handoff, and % of handoffs where the robot was ready |
+| `fig3_h_accuracy.png` | Fixed vs dynamic h: predicted vs actual time to the next human handoff action, and the error per estimate |
+| `fig4_idle_time.png` | Robot time with no task and human time standing still |
+| `fig5_score_over_time.png` | Mean score curve per robot (band = range across games) |
+| `summary_by_robot.csv` | Mean and SD of every measure per robot (also printed as a Markdown table) |
+
+`fig3` pairs each `horizon` estimate with the human's next put/take on a handoff
+counter, using estimates made up to 15 s before it and naming the counter used.
 
 ## Known limitations
 * Recorded `h` values and row frequencies are conditional estimates, not
