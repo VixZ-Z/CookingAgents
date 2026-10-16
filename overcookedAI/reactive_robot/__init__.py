@@ -1,2 +1,2 @@
 from .robot import ReactiveRobot
-from .horizon import ReactiveFixedHRobot, ReactiveDynamicHRobot
+from .horizon import AnticipatoryFixedHRobot, AnticipatoryDynamicHRobot

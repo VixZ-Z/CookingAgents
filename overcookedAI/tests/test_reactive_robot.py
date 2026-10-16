@@ -13,7 +13,7 @@ DT = 1 / 30
 
 class ReactiveRobotTests(unittest.TestCase):
     def setUp(self):
-        self.state = GameState(ReactiveRobot, seed=0, layout="reactive")
+        self.state = GameState(ReactiveRobot, seed=0, layout="divided")
         self.state.orders = [Order("salad", 150)]
         self.state.order_timer = -1000
         self.robot = self.state.robot
@@ -199,7 +199,7 @@ class ReactiveRobotTests(unittest.TestCase):
         self.robot.enabled = True
         self.deliver("lettuce", 1)
         self.finish("salad")
-        restarted = GameState(ReactiveRobot, seed=0, layout="reactive")
+        restarted = GameState(ReactiveRobot, seed=0, layout="divided")
         self.assertIsNone(restarted.robot.carrying)
         self.assertEqual(restarted.robot.completed_salads, 0)
         self.assertTrue(all(s.held is None for s in restarted.stations))

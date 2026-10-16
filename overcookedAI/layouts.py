@@ -65,7 +65,7 @@ def _collab(name, onion_col, lettuce_col, description, swap_time=None):
                   swap_time=swap_time)
 
 
-def _reactive():
+def _divided():
     """Separated workspaces connected by two one-item handoff counters."""
     human = [(50, C.Y_TOP, "crate_tomato", "Tomato", HUMAN),
              (142, C.Y_TOP, "crate_onion", "Onion", HUMAN),
@@ -82,14 +82,14 @@ def _reactive():
              (1018, C.Y_BOTTOM, "trash", "Trash", ROBOT)]
     handoff = [(518, 250, "counter", "Handoff", SHARED),
                (518, 400, "counter", "Handoff", SHARED)]
-    return Layout("reactive", "Separate workspaces with two handoff counters",
+    return Layout("divided", "Separate workspaces with two handoff counters",
                   human + robot + handoff, (300, 330), (800, 330),
                   walls=((518, 90, 64, 160), (518, 314, 64, 86),
                          (518, 464, 64, 131)))
 
 
 LAYOUTS: dict[str, Layout] = {
-    "reactive": _reactive(),
+    "divided": _divided(),
     "shared": Layout("shared", "Shared kitchen: human and robot use all stations",
                      [tuple(s) for s in C.STATIONS],
                      C.PLAYER_START, C.ROBOT_START),

@@ -23,8 +23,8 @@ class ReactiveRobot(RobotBase):
     speed = C.ROBOT_SPEED
 
     def __init__(self, state):
-        if state.layout.name != "reactive":
-            raise ValueError("Reactive robot requires the divided reactive layout")
+        if state.layout.name != "divided":
+            raise ValueError("Reactive robot requires the divided layout")
         super().__init__(*state.layout.robot_start)
         self.navigator = Navigator()
         self.transition_model = HumanTransitionModel()

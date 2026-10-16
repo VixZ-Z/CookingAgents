@@ -167,12 +167,12 @@ autonomous completion of both recipes, consecutive orders, separate pot batches,
 and returning to collaboration.
 
 ## Overview
-### Separated reactive kitchen
+### Divided kitchen (reactive baseline)
 
 Run the reactive robot in the divided kitchen:
 
 ```powershell
-python main.py --robot reactive --layout reactive --seed 0
+python main.py --robot reactive --layout divided --seed 0
 ```
 
 A solid divider runs across the entire playable height. Two purple handoff
@@ -204,7 +204,7 @@ inactivity. A separate observational transition model learns human action patter
 but its forecasts do not affect policy decisions. The human's body is used only
 for collision avoidance. `--robot reactive` defaults to this map; other layouts
 are rejected. Add `--recipe salad` or `--recipe soup` to restrict orders.
-Use `--robot none --layout reactive --no-log` to preview the map without a robot.
+Use `--robot none --layout divided --no-log` to preview the map without a robot.
 
 The interface shows the task, target, recipe and route. Transition diagnostics
 are included in the normal CSV logs; add `--debug-agent` for console diagnostics
@@ -214,17 +214,17 @@ Comparing this separated kitchen with anticipatory mode in the shared kitchen
 changes both layout and policy; a controlled policy comparison needs the same
 layout for both agents.
 
-### Reactive variants with fixed and dynamic h
+### Anticipatory robots with fixed and dynamic h
 
 Run these commands from `overcookedAI/` in the activated environment:
 
 ```powershell
 python main.py --robot reactive --seed 0
-python main.py --robot reactive_fixed_h --fixed-h 4 --seed 0
-python main.py --robot reactive_dynamic_h --seed 0
+python main.py --robot anticipatory_fixed_h --fixed-h 4 --seed 0
+python main.py --robot anticipatory_dynamic_h --seed 0
 ```
 
-All three use the same separated `reactive` layout and initial order schedule for
+All three use the same `divided` layout and initial order schedule for
 the same seed. The ordinary `reactive` mode remains the observation-only control.
 The two new modes extend its cooking policy with preparation before an expected
 handoff. They never fetch ingredients from the human workspace or take over after
@@ -237,10 +237,16 @@ agent's five-second inactivity timeout.
 
 - **Fixed h:** starts at 4 seconds by default and counts down after a completed
   human action. Movement alone does not restart it. `--fixed-h` accepts a finite,
-  positive number of seconds, only with `reactive_fixed_h`; R preserves that
+  positive number of seconds, only with `anticipatory_fixed_h`; R preserves that
   setting. After expiry the value stays zero until another observed action.
 - **Dynamic h:** estimates collision-aware walking distance divided by observed
-  walking speed, plus remaining chopping and estimated interaction time. It
+  walking speed, plus remaining chopping and interaction time. Those times adapt to
+  the player's pace within one game, per situation (`take:crate`, `put:board`,
+  `take:board`, `put:counter`, ...): each completed human action gives a handling
+  time (gap since the previous action minus the walking time between the two
+  stations), and chopping gives a factor on the nominal chop time. Estimates start
+  at the 0.2 s default, shrink towards observed means, and reset with R; nothing is
+  stored between games. It
   refreshes as the human moves or changes preparation stage. Supported transition
   predictions can identify an upcoming crate pickup, board visit or counter
   pickup; current carried items and observed board work also provide evidence.
@@ -279,7 +285,7 @@ routines remain possible later extensions, outside the first prototype.
 ```
 main.py             entry point / main loop (--robot, --layout, --seed)
 config.py           constants and the original station layout (pixels)
-layouts.py          selectable layouts: scripted, shared, reactive, near, far, mixed, swap
+layouts.py          selectable layouts: scripted, shared, divided, near, far, mixed, swap
 game.py             game logic: stations, orders, player, rules, scoring
 render.py           all pygame drawing
 robot_base.py       common robot interface
@@ -310,6 +316,6 @@ pip install -r requirements.txt
 python main.py                                   # scripted robot
 python main.py --robot none --layout far         # preview a layout
 ```
-Layouts: `scripted | shared | reactive | near | far | mixed | swap`.
+Layouts: `scripted | shared | divided | near | far | mixed | swap`.
 Controls: WASD move, E interact, hold SPACE chop, B robot on/off, P pause,
 R restart, ESC quit.

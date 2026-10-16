@@ -50,7 +50,7 @@ def station(state, kind, owner=None):
 
 def use(state, target):
     goal = approach_point(target)
-    if state.layout.name == "reactive" and target.owner == "shared":
+    if state.layout.name == "divided" and target.owner == "shared":
         goal = (target.rect.left - 26, target.rect.centery)
     place(state.player, goal)
     state.player_interact()
@@ -145,12 +145,12 @@ class HumanEventTests(unittest.TestCase):
 
     def workflow(self, state):
         use(state, station(state, "crate_tomato"))
-        board = station(state, "board", "human" if state.layout.name == "reactive" else None)
+        board = station(state, "board", "human" if state.layout.name == "divided" else None)
         use(state, board)
         for _ in range(round(C.CHOP_TIME / DT) + 2):
             state.update(DT, (0, 0), True)
         use(state, board)
-        counter = station(state, "counter", "shared" if state.layout.name == "reactive" else None)
+        counter = station(state, "counter", "shared" if state.layout.name == "divided" else None)
         use(state, counter)
         return counter
 
@@ -208,7 +208,7 @@ class HumanEventTests(unittest.TestCase):
 
     def test_both_agents_learn_identical_real_human_workflows(self):
         counts = []
-        for robot, layout in ((AnticipatoryRobot, "shared"), (ReactiveRobot, "reactive")):
+        for robot, layout in ((AnticipatoryRobot, "shared"), (ReactiveRobot, "divided")):
             state = GameState(robot, seed=0, layout=layout, recipe="salad")
             state.robot.enabled = False
             self.workflow(state)
@@ -225,11 +225,11 @@ class HumanEventTests(unittest.TestCase):
         self.assertEqual(counts[0], counts[1])
 
     def test_robot_interactions_and_chopping_never_train_the_model(self):
-        for robot, layout in ((AnticipatoryRobot, "shared"), (ReactiveRobot, "reactive")):
+        for robot, layout in ((AnticipatoryRobot, "shared"), (ReactiveRobot, "divided")):
             state = GameState(robot, seed=0, layout=layout, recipe="salad")
             state.robot.enabled = False
             interact(state.robot, station(state, "crate_tomato"), state)
-            board = station(state, "board", "robot" if layout == "reactive" else None)
+            board = station(state, "board", "robot" if layout == "divided" else None)
             interact(state.robot, board, state)
             task = Task(board, "chop", "tomato", "Chopping tomato", "salad")
             execute_task(state.robot, task, state, C.CHOP_TIME)
@@ -238,13 +238,13 @@ class HumanEventTests(unittest.TestCase):
             self.assertEqual(state.robot.transition_model.transition_count, 0)
 
     def test_two_real_routines_create_a_live_forecast_in_both_agents(self):
-        for robot, layout in ((AnticipatoryRobot, "shared"), (ReactiveRobot, "reactive")):
+        for robot, layout in ((AnticipatoryRobot, "shared"), (ReactiveRobot, "divided")):
             with self.subTest(robot=robot.__name__):
                 state = GameState(robot, seed=0, layout=layout, recipe="salad")
                 state.robot.enabled = False
                 crate = station(state, "crate_tomato")
-                counter = station(state, "counter", "shared" if layout == "reactive" else None)
-                trash = station(state, "trash", "robot" if layout == "reactive" else None)
+                counter = station(state, "counter", "shared" if layout == "divided" else None)
+                trash = station(state, "trash", "robot" if layout == "divided" else None)
                 for _ in range(2):
                     use(state, crate)
                     state.update(DT, (0, 0), False)
@@ -332,7 +332,7 @@ class TransitionPolicyTests(unittest.TestCase):
         self.assertEqual(self.state.robot.intent.source, "rules")
 
     def test_reactive_planning_ignores_an_available_transition_forecast(self):
-        state = GameState(ReactiveRobot, seed=0, layout="reactive", recipe="salad")
+        state = GameState(ReactiveRobot, seed=0, layout="divided", recipe="salad")
         handoffs = [s for s in state.stations if s.owner == "shared"]
         handoffs[0].held, handoffs[1].held = "chopped_tomato", "chopped_lettuce"
         before = state.robot._plan(state)
@@ -355,7 +355,7 @@ class TransitionPolicyTests(unittest.TestCase):
 
 class TransitionLoggingTests(unittest.TestCase):
     def test_both_models_log_updates_once_without_counting_them_as_robot_actions(self):
-        for robot, layout in ((AnticipatoryRobot, "shared"), (ReactiveRobot, "reactive")):
+        for robot, layout in ((AnticipatoryRobot, "shared"), (ReactiveRobot, "divided")):
             with self.subTest(robot=robot.__name__), tempfile.TemporaryDirectory() as folder:
                 state = GameState(robot, seed=0, layout=layout, recipe="salad")
                 state.robot.enabled = False
@@ -367,7 +367,7 @@ class TransitionLoggingTests(unittest.TestCase):
                     rec.before(state)
                     state.update(DT, (0, 0), False)
                     rec.after(state, DT)
-                use(state, station(state, "board", "human" if layout == "reactive" else None))
+                use(state, station(state, "board", "human" if layout == "divided" else None))
                 for _ in range(30):
                     rec.before(state)
                     state.update(DT, (0, 0), False)
