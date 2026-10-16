@@ -208,6 +208,12 @@ from the fixed value.
 
 ## When files are written, and report figures
 
+The game length defaults to 180 s and can be set at launch with `--game-time SECONDS`
+(for example `python main.py --robot reactive --game-time 120`). It is recorded as
+`GAME_TIME` in the `run_config` row, and R restarts with the same length. Order
+lifetimes (65-90 s) and timing constants are not scaled, so use the same length for
+all conditions you compare. Elsewhere in this file "180" means the default.
+
 `logs/<run>.csv` is created when the game starts and rows are written during play.
 The run is closed, and its row added to `logs/summary.csv`, in these cases:
 
@@ -227,7 +233,8 @@ python analyze.py                # logs/ -> figures/
 python analyze.py --group condition --include-aborted
 ```
 
-By default only completed games are used and participant `dev` is excluded.
+By default only completed games are used (add `--include-aborted` for the rest);
+all participants are included.
 It writes `fig1_outcomes` to `fig7_human_heatmap` (png) and `summary_by_condition.csv`.
 
 ## Known limitations

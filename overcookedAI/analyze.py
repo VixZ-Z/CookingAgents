@@ -2,11 +2,11 @@
 
     python analyze.py                       # logs/ -> figures/
     python analyze.py --logs logs --out figures --group robot
-    python analyze.py --include-aborted --include-participant dev
+    python analyze.py --include-aborted
 
 Reads the per-game event files in ``logs/`` (see LOGGING.md). Runs are grouped by
 robot (default) or by the free ``condition`` label. By default games that did not
-reach the full time and the practice participant ``dev`` are left out.
+reach the full time are left out; every participant is included.
 Needs only numpy and matplotlib.
 """
 from __future__ import annotations
@@ -67,29 +67,33 @@ class Run:
             return {}
 
 
-def load_runs(logs, group_by, include_aborted, include_participants):
+def load_runs(logs, group_by, include_aborted):
     summary = {}
     path = os.path.join(logs, "summary.csv")
     if os.path.exists(path):
         with open(path, newline="", encoding="utf-8") as f:
             summary = {r["run_id"]: r for r in csv.DictReader(f)}
     runs = []
+    skipped = defaultdict(int)
     for path in sorted(glob.glob(os.path.join(logs, "*.csv"))):
         if os.path.basename(path).startswith("summary"):
             continue
         with open(path, newline="", encoding="utf-8") as f:
             rows = list(csv.DictReader(f))
         if not rows or rows[-1]["action"] != "game_end":
+            skipped["never closed (crash or killed program)"] += 1
             continue
         meta = rows[0]
         completed = rows[-1]["info"] == "completed"
-        if (not completed and not include_aborted) or (
-                meta["participant"] == "dev" and "dev" not in include_participants):
+        if not completed and not include_aborted:
+            skipped["aborted (use --include-aborted)"] += 1
             continue
         for r in rows:
             r["t"] = num(r["t"])
         runs.append(Run(meta[group_by] or meta["robot"], meta["participant"], rows,
                         summary.get(meta["run_id"], {})))
+    for reason, count in skipped.items():
+        print(f"skipped {count} game(s): {reason}")
     return runs
 
 
@@ -380,12 +384,10 @@ def main():
     ap.add_argument("--out", default="figures")
     ap.add_argument("--group", choices=["robot", "condition"], default="robot")
     ap.add_argument("--include-aborted", action="store_true", help="also use games that did not finish")
-    ap.add_argument("--include-participant", action="append", default=[],
-                    help="participant ids to keep that are hidden by default (dev)")
     args = ap.parse_args()
-    runs = load_runs(args.logs, args.group, args.include_aborted, args.include_participant)
+    runs = load_runs(args.logs, args.group, args.include_aborted)
     if not runs:
-        print("No finished games found in", args.logs, "(use --include-aborted for partial games).")
+        print("No games to plot in", args.logs, "- see the skipped lines above.")
         return
     os.makedirs(args.out, exist_ok=True)
     groups = ordered_groups(runs)

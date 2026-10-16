@@ -161,6 +161,74 @@ class ExperimentLoggingTests(unittest.TestCase):
         self.assertIn("handling", pace[-1])
 
 
+class MainLoopLoggingTests(unittest.TestCase):
+    def test_human_interaction_pressed_with_e_is_logged_by_the_real_loop(self):
+        import sys
+        from unittest.mock import patch
+        from main import main
+
+        def take_something(state):
+            state.player.carrying = "tomato"
+
+        events = [[pygame.event.Event(pygame.KEYDOWN, key=pygame.K_e)],
+                  [], [pygame.event.Event(pygame.QUIT)]]
+        with tempfile.TemporaryDirectory() as folder:
+            def recorder(meta, enabled=True):
+                return RunRecorder(meta, folder, enabled)
+
+            with patch.object(sys, "argv", ["main.py", "--robot", "none", "--layout", "divided",
+                                            "--participant", "T01"]):
+                with patch("main.View"), patch("main.RunRecorder", side_effect=recorder):
+                    with patch("game.GameState.player_interact", take_something):
+                        with patch("pygame.event.get", side_effect=events):
+                            main()
+            rows = read(glob.glob(os.path.join(folder, "T01_*.csv"))[0])
+        human = [r for r in rows if r["actor"] == "human" and r["action"] == "take"]
+        self.assertEqual([r["item"] for r in human], ["tomato"])
+
+
+class GameTimeOptionTests(unittest.TestCase):
+    def test_game_time_sets_the_clock_and_survives_restart(self):
+        import contextlib
+        import io
+        import sys
+        from unittest.mock import patch
+        from main import main
+
+        clocks = []
+        events = [[pygame.event.Event(pygame.KEYDOWN, key=pygame.K_r)],
+                  [pygame.event.Event(pygame.QUIT)]]
+        with patch.object(C, "GAME_TIME", C.GAME_TIME), patch.object(
+                sys, "argv", ["main.py", "--robot", "none", "--no-log", "--game-time", "45"]):
+            with patch("main.View"), patch("main.RunRecorder") as recorder:
+                recorder.return_value.start.side_effect = lambda state: clocks.append(
+                    (state.game_time, state.elapsed))
+                with patch("pygame.event.get", side_effect=events):
+                    main()
+        self.assertEqual(clocks, [(45.0, 0.0), (45.0, 0.0)])
+
+        for bad in ("0", "-5", "nan", "inf"):
+            with patch.object(C, "GAME_TIME", C.GAME_TIME), patch.object(
+                    sys, "argv", ["main.py", "--robot", "none", "--game-time", bad]):
+                with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
+                    main()
+
+    def test_game_ends_after_the_requested_time_and_is_logged(self):
+        from unittest.mock import patch
+        with patch.object(C, "GAME_TIME", 2):
+            state = make_state(AnticipatoryDynamicHRobot)
+            self.assertEqual(state.game_time, 2.0)
+            with tempfile.TemporaryDirectory() as folder:
+                rec = RunRecorder(META, folder)
+                rec.start(state)
+                wait(state, 2.5, rec)
+                self.assertTrue(state.game_over)
+                rec.finish(state, completed=True)
+                rows = read(rec.path)
+        config = json.loads(next(r for r in rows if r["action"] == "run_config")["info"])
+        self.assertEqual(config["parameters"]["GAME_TIME"], 2)
+
+
 if __name__ == "__main__":
     pygame.init()
     unittest.main()

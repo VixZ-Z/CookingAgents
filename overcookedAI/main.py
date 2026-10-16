@@ -56,6 +56,8 @@ def main():
                     help="limit orders to one recipe; default includes salad and soup")
     ap.add_argument("--fixed-h", type=float, default=None,
                     help=f"seconds for anticipatory_fixed_h (default: {C.FIXED_H_SECONDS})")
+    ap.add_argument("--game-time", type=float, default=None,
+                    help=f"game length in seconds (default: {C.GAME_TIME})")
     ap.add_argument("--participant", default="dev",
                     help="participant id, used in the log file name")
     ap.add_argument("--condition", default="",
@@ -69,6 +71,10 @@ def main():
             ap.error("--fixed-h requires --robot anticipatory_fixed_h")
         if not math.isfinite(args.fixed_h) or args.fixed_h <= 0:
             ap.error("--fixed-h must be finite and greater than zero")
+    if args.game_time is not None:
+        if not math.isfinite(args.game_time) or args.game_time <= 0:
+            ap.error("--game-time must be finite and greater than zero")
+        C.GAME_TIME = args.game_time
     if args.debug_agent:
         logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
 
@@ -107,6 +113,9 @@ def main():
 
     while running:
         dt = min(clock.tick(C.FPS) / 1000.0, 0.05)
+        # Snapshot before key events: E (player_interact) changes the state here, and
+        # the recorder must see that change as part of this frame.
+        recorder.before(state)
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
@@ -117,6 +126,7 @@ def main():
                     recorder.finish(state, completed=state.game_over)
                     state = create_state()
                     recorder.start(state)
+                    recorder.before(state)
                     paused = False
                 elif event.key == pygame.K_p and not state.game_over:
                     paused = not paused
@@ -129,7 +139,6 @@ def main():
             keys = pygame.key.get_pressed()
             move = (keys[pygame.K_d] - keys[pygame.K_a],
                     keys[pygame.K_s] - keys[pygame.K_w])
-            recorder.before(state)
             state.update(dt, move, keys[pygame.K_SPACE])
             recorder.after(state, dt)
             if state.game_over:
