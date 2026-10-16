@@ -1,6 +1,7 @@
 """Divided-kitchen collaborator using orders and delivered items only.
 
-No human intent model, preference learning, ingredient fetching or takeover.
+Transition forecasts are learned for observation only, never used by the policy.
+No intent-based planning, ingredient fetching or autonomous takeover.
 The human's body is considered only by collision-aware navigation.
 """
 import json
@@ -13,6 +14,7 @@ from game import COMBOS
 from navigation import Navigator, approach_point
 from robot_base import RobotBase
 from robot_tasks import Task, execute_task
+from human_transitions import HumanTransitionModel
 
 
 class ReactiveRobot(RobotBase):
@@ -25,6 +27,7 @@ class ReactiveRobot(RobotBase):
             raise ValueError("Reactive robot requires the divided reactive layout")
         super().__init__(*state.layout.robot_start)
         self.navigator = Navigator()
+        self.transition_model = HumanTransitionModel()
         self.task = None
         self.recipe = None
         self.status = "Waiting for delivered ingredients"
@@ -217,6 +220,7 @@ class ReactiveRobot(RobotBase):
         return None
 
     def update_ai(self, dt, state):
+        self.transition_model.update(state)
         previous = self.task
         events = []
         self._blocked_targets = set()
@@ -243,7 +247,8 @@ class ReactiveRobot(RobotBase):
                     if self.rect.inflate(50, 50).colliderect(task.station.rect):
                         result = execute_task(self, task, state, dt)
                         if result == "waiting":
-                            self.status = "Waiting for soup to finish cooking"
+                            self.status = ("Waiting for soup to finish cooking"
+                                           if task.action == "scoop" else task.label)
                         elif result == "failed":
                             self.status = "Action failed; reconsidering task"
                             events.append("interaction_no_effect")

@@ -4,7 +4,7 @@
     python main.py --robot none --layout far        # preview a layout, human only
     python main.py --robot anticipatory --seed 0   # shared kitchen, salads and soups
 
-Robots : scripted | reactive | anticipatory | none
+Robots : scripted | reactive | reactive_fixed_h | reactive_dynamic_h | anticipatory | none
 Layouts: scripted | shared | reactive | near | far | mixed | swap
 
 Controls: WASD move, E interact, hold SPACE chop, B robot on/off,
@@ -12,6 +12,7 @@ P pause, R restart, ESC quit.
 """
 import argparse
 import logging
+import math
 
 import pygame
 
@@ -31,6 +32,12 @@ def get_robot_class(name: str):
     if name == "reactive":
         from reactive_robot import ReactiveRobot
         return ReactiveRobot
+    if name == "reactive_fixed_h":
+        from reactive_robot import ReactiveFixedHRobot
+        return ReactiveFixedHRobot
+    if name == "reactive_dynamic_h":
+        from reactive_robot import ReactiveDynamicHRobot
+        return ReactiveDynamicHRobot
     if name == "anticipatory":
         from anticipatory_robot import AnticipatoryRobot
         return AnticipatoryRobot
@@ -40,12 +47,15 @@ def get_robot_class(name: str):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--robot", default="scripted",
-                    choices=["scripted", "reactive", "anticipatory", "none"])
+                    choices=["scripted", "reactive", "reactive_fixed_h", "reactive_dynamic_h",
+                             "anticipatory", "none"])
     ap.add_argument("--layout", default=None, choices=LAYOUT_NAMES,
                     help="default: scripted for scripted, shared for anticipatory, reactive for reactive, else near")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--recipe", choices=C.ORDER_KINDS,
                     help="limit orders to one recipe; default includes salad and soup")
+    ap.add_argument("--fixed-h", type=float, default=None,
+                    help=f"seconds for reactive_fixed_h (default: {C.FIXED_H_SECONDS})")
     ap.add_argument("--participant", default="dev",
                     help="participant id, used in the log file name")
     ap.add_argument("--condition", default="",
@@ -54,10 +64,17 @@ def main():
     ap.add_argument("--debug-agent", action="store_true",
                     help="print robot decision and navigation changes to the console")
     args = ap.parse_args()
+    if args.fixed_h is not None:
+        if args.robot != "reactive_fixed_h":
+            ap.error("--fixed-h requires --robot reactive_fixed_h")
+        if not math.isfinite(args.fixed_h) or args.fixed_h <= 0:
+            ap.error("--fixed-h must be finite and greater than zero")
     if args.debug_agent:
         logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
 
-    defaults = {"scripted": "scripted", "anticipatory": "shared", "reactive": "reactive"}
+    reactive_modes = ("reactive", "reactive_fixed_h", "reactive_dynamic_h")
+    defaults = {"scripted": "scripted", "anticipatory": "shared",
+                **{mode: "reactive" for mode in reactive_modes}}
     layout = args.layout or defaults.get(args.robot, "near")
     recipe = args.recipe
     if args.robot == "anticipatory":
@@ -65,14 +82,20 @@ def main():
             ap.error("the anticipatory prototype uses --layout shared or scripted")
     if args.robot == "scripted" and layout != "scripted":
         ap.error("the scripted robot only works with --layout scripted")
-    if args.robot == "reactive" and layout != "reactive":
-        ap.error("the reactive robot requires --layout reactive")
+    if args.robot in reactive_modes and layout != "reactive":
+        ap.error("reactive robot modes require --layout reactive")
     robot_cls = get_robot_class(args.robot)
 
     pygame.init()
     view = View()
     clock = pygame.time.Clock()
-    state = GameState(robot_cls, args.seed, layout, recipe)
+    def create_state():
+        state = GameState(robot_cls, args.seed, layout, recipe)
+        if args.fixed_h is not None:
+            state.robot.horizon.fixed_seconds = args.fixed_h
+        return state
+
+    state = create_state()
     recorder = RunRecorder(
         {"participant": args.participant,
          "condition": args.condition or "default", "robot": args.robot,
@@ -92,7 +115,7 @@ def main():
                     running = False
                 elif event.key == pygame.K_r:
                     recorder.finish(state, completed=state.game_over)
-                    state = GameState(robot_cls, args.seed, layout, recipe)
+                    state = create_state()
                     recorder.start(state)
                     paused = False
                 elif event.key == pygame.K_p and not state.game_over:

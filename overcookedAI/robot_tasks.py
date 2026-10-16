@@ -17,6 +17,8 @@ class Task:
 def execute_task(actor, task, state, dt):
     """Execute an in-range task; return completed, working, waiting or failed."""
     station = task.station
+    if task.action == "wait_for_handoff":
+        return "waiting"
     if task.action == "chop":
         chopped = chop_name(station.held)
         if actor.carrying is not None or chopped is None:

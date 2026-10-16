@@ -34,9 +34,9 @@ SUMMARY_FIELDS = ["run_id", "participant", "condition", "robot", "layout",
                   "robot_anticipating_actions"]
 
 POS_PERIOD = 1.0 / 5          # position samples at 5 Hz of game time
-# Robot knowledge sources (AnticipatoryRobot.contribution_source) that mean
-# "acting before the human has shown the choice": the robot is anticipating.
-ANTICIPATING_SOURCES = ("routine", "default", "movement")
+# Forecast-based contributions, including preparation before a predicted handoff.
+# Horizon preparation can anticipate delivery timing for an already visible item.
+ANTICIPATING_SOURCES = ("routine", "default", "movement", "transition", "horizon")
 
 
 class RunRecorder:
@@ -70,12 +70,17 @@ class RunRecorder:
         self._pos_acc = 0.0
         self._last_status = None
         self._last_diagnostic_revision = 0
+        self._last_transition_revision = 0
+        self._last_horizon_time = -float("inf")
+        self._last_horizon_key = None
         self._stats = {"served_human": 0, "served_robot": 0, "salads": 0,
                        "soups": 0, "expired": 0, "first_serve_t": "",
                        "robot_actions": 0, "robot_anticipating_actions": 0}
         for order in state.orders:
             self._log(0.0, "order_new", "system", item=order.kind,
                       order_id=self._oid(order))
+        if hasattr(state.robot, "horizon"):
+            self._log(0.0, "h_config", "system", info=json.dumps(state.robot.horizon.snapshot(state)))
         self._prev = None
 
     def finish(self, state, completed: bool) -> None:
@@ -179,6 +184,19 @@ class RunRecorder:
 
         # Robot status text (what the robot says it is doing) ------------
         if robot:
+            if hasattr(robot, "horizon"):
+                data = robot.horizon.snapshot(state)
+                data["scheduling"] = robot.scheduling
+                key = (data["target"], data["action"], data["item"], data["source"],
+                       data["remaining"] is None, robot.scheduling.get("choice"))
+                if key != self._last_horizon_key or t - self._last_horizon_time >= 0.5:
+                    self._last_horizon_key, self._last_horizon_time = key, t
+                    self._log(t, "horizon", "robot", info=json.dumps(data))
+            transitions = getattr(robot, "transition_model", None)
+            if transitions and transitions.revision != self._last_transition_revision:
+                self._last_transition_revision = transitions.revision
+                self._log(t, "human_transition", "robot",
+                          info=json.dumps(transitions.snapshot()))
             revision = getattr(robot, "diagnostic_revision", 0)
             if revision != self._last_diagnostic_revision:
                 self._last_diagnostic_revision = revision

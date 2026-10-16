@@ -1,7 +1,7 @@
 """Shared-kitchen teammate: anticipate complementary work for the earliest deadline.
 
-Observable goals override learned starter frequencies. No full action-sequence
-learning, forgetting or h yet. Human inactivity triggers autonomous completion.
+Observable goals override learned starter frequencies and action transitions.
+No higher-order sequences, forgetting or h yet. Inactivity triggers takeover.
 """
 from __future__ import annotations
 
@@ -29,6 +29,7 @@ class AnticipatoryRobot(RobotBase):
             raise ValueError("Anticipatory prototype needs a shared kitchen")
         super().__init__(*state.layout.robot_start)
         self.model = HumanIntentModel()
+        self.transition_model = self.model.transitions
         self.navigator = Navigator()
         self.intent = None
         self.task = None
@@ -138,7 +139,10 @@ class AnticipatoryRobot(RobotBase):
         carried = ingredient_name(state.player.carrying)
         ingredient = carried if carried in self.ingredients else None
         source = "observed"
-        if ingredient is None and self.contribution_source != "observed":
+        if ingredient is None and self.intent and self.intent.source == "transition":
+            ingredient = self.intent.ingredient
+            source = "transition"
+        elif ingredient is None and self.contribution_source != "observed":
             ingredient = self.intent.ingredient if self.intent else None
             source = "movement"
         if ingredient in self.ingredients:
@@ -257,7 +261,7 @@ class AnticipatoryRobot(RobotBase):
                        "plated_" + self.human_ingredient)
         approaching = (self.intent and self.intent.action == "approach"
                        and self.intent.ingredient == self.human_ingredient)
-        if (self.contribution_source not in ("routine", "default") and not approaching
+        if (self.contribution_source not in ("routine", "default", "transition") and not approaching
                 and not any(item in human_items for item in inventory)):
             return None
         raw = self._choose_station(
@@ -272,7 +276,7 @@ class AnticipatoryRobot(RobotBase):
         if board:
             target = self._choose_station([s for s in state.stations if s.kind == "crate_" + other], state)
             label = (f"Expecting your {self.human_ingredient}: prepare {other}"
-                     if self.contribution_source in ("routine", "default")
+                     if self.contribution_source in ("routine", "default", "transition")
                      else "Anticipating " + self.recipe + ": prepare " + other)
             return self._pick(target, "fetch", other, label)
         return None

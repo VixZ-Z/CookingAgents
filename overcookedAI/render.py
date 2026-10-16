@@ -240,6 +240,10 @@ class View:
             info[1] = (f"Target: {robot.task.station.label} | Recipe: {robot.recipe}"
                        if robot.task else "Deliver raw or chopped ingredients to purple counters")
             info[2] = "Reactive: delivered items only | R: restart | ESC: exit"
+            if robot.transition_model.prediction:
+                info[2] = "Observe only | " + robot.transition_model.prediction.description
+            if hasattr(robot, "horizon"):
+                info[2] = robot.horizon_description
         for i, line in enumerate(info):
             while self.small.size(line)[0] > C.WIDTH - 585:
                 line = line[:-4] + "..."

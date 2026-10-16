@@ -62,6 +62,42 @@ History lives for one game and resets with R. The bottom panel shows the forecas
 for example `Expected start: tomato (2/3 soup starts)`. This ratio describes the
 observed choices, not validated prediction accuracy.
 
+### Learning transitions between human actions
+
+Both agents use `human_transitions.py` to learn a first-order model from completed
+human actions: taking, putting, finishing chopping, adding to a pot, scooping,
+combining, serving and discarding. Each symbol includes the action, item and
+station type. Game rules emit successful actions exactly once, independently of
+CSV logging. Idle frames, failed interactions and robot actions add no samples.
+
+For each recipe the model estimates
+`P(next action | previous action, recipe)` from transition counts. Unknown rows
+have no forecast. Ties favour the latest observed outcome. Transitions never
+cross order boundaries, serving, or a detected priority-context interruption.
+History accumulates for one game and resets with R; there is no forgetting.
+
+The anticipatory agent can use a learned next action to choose the human's next
+station and prepare complementary work before the human's next ingredient
+pickup. By default a row needs at least two observations and a most likely
+outcome of at least 60% (`TRANSITION_MIN_SAMPLES` and
+`TRANSITION_MIN_PROBABILITY`). Incompatible carried items, unavailable targets,
+or subsequent movement away from the forecast cause a fallback to current-state
+rules. A new completed action starts a new forecast rather than treating the
+movement that led to that action as evidence against the next goal.
+
+The reactive agent learns and displays the same forecasts for observation only.
+Its task selection does not use them, preserving a reactive baseline. The screen
+labels its forecast `Observe only`; the anticipatory intent panel labels learned
+goals with their row frequency and sample count. These frequencies are not
+calibrated prediction accuracy.
+
+Repeat a routine such as taking tomato, putting it on a board, chopping, taking
+the chopped tomato and delivering it to a counter across at least two orders.
+When that source action recurs, the learned destination can replace the rule
+guess. Both modes use the existing launch commands; no additional flag is needed.
+CSV `human_transition` rows record forecasts, row distributions, sample counts,
+and prediction outcomes scored before the new observation updates the model.
+
 ### Taking over after 5 seconds of human inactivity
 
 After 5 seconds without human activity, the robot stops relying on the predicted
@@ -102,13 +138,15 @@ the inactivity timeout, it can complete the whole meal itself.
 The screen shows the inferred human goal (blue outline), the robot's task target
 (turquoise outline), its route, and a blue circle for the short movement
 projection. The bottom panel explains the current robot task and human intent.
-Confidence percentages are heuristic scores, not measured prediction accuracy.
+Rule confidence percentages are heuristic scores; learned intent percentages
+are conditional transition frequencies, not measured prediction accuracy.
 
-This prototype combines rule-based goal inference with learned starter frequencies.
-Learning full action sequences, forgetting,
-fixed/dynamic `h` and experimental CSV logging are not yet
-implemented for this agent. The future reactive comparison should use the same
-shared kitchen and movement rules.
+This prototype combines rule-based goal inference with learned starter frequencies
+and first-order human action transitions. Higher-order sequence models, forgetting,
+and integration of `h` into the shared-kitchen anticipatory policy remain future
+work. The separated-kitchen timing variants below implement fixed/dynamic `h`
+and a local scheduling cost. CSV logging is enabled by default. A controlled
+policy comparison should use the same kitchen and movement rules for both agents.
 
 ### Behavioural checks
 
@@ -161,8 +199,9 @@ Leftovers from expired orders can be cleared off the board and stored to make
 room for new raw deliveries; they are not discarded automatically.
 
 The policy uses current orders, station contents and carried robot items only.
-It never fetches ingredients from the human side, infers human intent, learns
-preferences or takes over after human inactivity. The human's body is used only
+It never fetches ingredients from the human side or takes over after human
+inactivity. A separate observational transition model learns human action patterns
+but its forecasts do not affect policy decisions. The human's body is used only
 for collision avoidance. `--robot reactive` defaults to this map; other layouts
 are rejected. Add `--recipe salad` or `--recipe soup` to restrict orders.
 Use `--robot none --layout reactive --no-log` to preview the map without a robot.
@@ -174,6 +213,58 @@ are included in the normal CSV logs; add `--debug-agent` for console diagnostics
 Comparing this separated kitchen with anticipatory mode in the shared kitchen
 changes both layout and policy; a controlled policy comparison needs the same
 layout for both agents.
+
+### Reactive variants with fixed and dynamic h
+
+Run these commands from `overcookedAI/` in the activated environment:
+
+```powershell
+python main.py --robot reactive --seed 0
+python main.py --robot reactive_fixed_h --fixed-h 4 --seed 0
+python main.py --robot reactive_dynamic_h --seed 0
+```
+
+All three use the same separated `reactive` layout and initial order schedule for
+the same seed. The ordinary `reactive` mode remains the observation-only control.
+The two new modes extend its cooking policy with preparation before an expected
+handoff. They never fetch ingredients from the human workspace or take over after
+human inactivity. Once supplies are available, productive cooking work takes
+precedence over speculative preparation.
+
+`h` is the estimated remaining game time until the human next changes a shared
+counter, through a placement or pickup. It is separate from the shared-kitchen
+agent's five-second inactivity timeout.
+
+- **Fixed h:** starts at 4 seconds by default and counts down after a completed
+  human action. Movement alone does not restart it. `--fixed-h` accepts a finite,
+  positive number of seconds, only with `reactive_fixed_h`; R preserves that
+  setting. After expiry the value stays zero until another observed action.
+- **Dynamic h:** estimates collision-aware walking distance divided by observed
+  walking speed, plus remaining chopping and estimated interaction time. It
+  refreshes as the human moves or changes preparation stage. Supported transition
+  predictions can identify an upcoming crate pickup, board visit or counter
+  pickup; current carried items and observed board work also provide evidence.
+- Without evidence for an accessible handoff, both modes display `unknown` and
+  wait. These estimates assume the human continues the inferred task. A pause
+  freezes game time; an inactive human does not trigger autonomous cooking.
+
+For an expected ingredient delivery, the robot chooses between approaching the
+handoff and fetching one plate, storing it on its own counter, then approaching
+the handoff. It avoids fetching another plate for an incoming plated ingredient
+or finished dish. For each candidate duration `T`, the local score is
+`max(0, h - T) + 2 * max(0, T - h)`: estimated robot idle time plus a weighted
+handoff lateness penalty. The lowest score wins; ties favour approaching the
+handoff. Forecast counter pickups are tracked but do not trigger this delivery
+preparation policy. Predicted supplies never become usable before actual delivery.
+
+The 4-second default, 0.2-second interaction estimate and lateness weight 2 are
+pilot parameters in `config.py`, requiring calibration before an experiment.
+This score is a local scheduling proxy, not measured human waiting or an optimal
+cost over all future tasks. Walking speed uses cumulative movement observations;
+there is no forgetting. The bottom panel shows the current `h` and evidence source.
+CSV `h_config` and `horizon` rows record parameters, estimates and candidate costs
+(see `LOGGING.md`). Prefetching and approaching a forecast handoff count as
+anticipatory actions; supplied cooking work remains reactive.
 
 A human and an autonomous robot cook together in a custom Pygame kitchen.
 The shared-kitchen prototype above is the current development focus. Older
@@ -193,9 +284,11 @@ game.py             game logic: stations, orders, player, rules, scoring
 render.py           all pygame drawing
 robot_base.py       common robot interface
 scripted_robot/     original robot (works, scripted layout only)
-reactive_robot/     divided-kitchen robot using delivered items and current orders
+reactive_robot/     delivered-items baseline and fixed/dynamic-h scheduling variants
 robot_tasks.py      shared task description and game-rule execution
 anticipatory_robot/ goal inference, learned starter frequencies, cooperative planner
+human_transitions.py shared human action events and first-order transition learning
+human_horizon.py    fixed countdown and dynamic human handoff-time estimates
 navigation.py       body-aware A* paths, movement projection costs, contact recovery
 tests/              headless behavioural checks
 logger.py           CSV events, positions, decision diagnostics and run summaries
