@@ -24,7 +24,7 @@ Crate columns (onion, lettuce):
 """
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 import config as C
 
@@ -105,5 +105,24 @@ LAYOUTS: dict[str, Layout] = {
 LAYOUT_NAMES = list(LAYOUTS)
 
 
-def get_layout(name: str) -> Layout:
-    return LAYOUTS[name]
+def get_layout(name: str, experiment=False) -> Layout:
+    layout = LAYOUTS[name]
+    if experiment:
+        if name != "reactive":
+            raise ValueError("The meal-period experiment requires the existing divided reactive kitchen")
+        # Reuse the divider, handoffs, equipment and starts. Only ingredient
+        # dispensers are replaced/added; both conditions receive this same list.
+        replacements = {"crate_onion": ("crate_bread", "Bread"),
+                        "crate_lettuce": ("crate_cheese", "Cheese")}
+        stations = []
+        for x, y, kind, label, owner in layout.stations:
+            kind, label = replacements.get(kind, (kind, label))
+            stations.append((x, y, kind, "Cook" if kind == "pot" else label, owner))
+        stations += [(326, C.Y_TOP, "crate_ham", "Ham", HUMAN),
+                     (418, C.Y_TOP, "crate_water", "Water", HUMAN),
+                     (234, C.Y_BOTTOM, "crate_potato", "Potato", HUMAN),
+                     (418, C.Y_BOTTOM, "crate_chicken", "Chicken", HUMAN),
+                     (0, 300, "crate_meat", "Meat", HUMAN),
+                     (0, 390, "crate_vegetables", "Vegetables", HUMAN)]
+        return replace(layout, stations=stations)
+    return layout

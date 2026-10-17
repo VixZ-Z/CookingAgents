@@ -57,3 +57,10 @@ INGREDIENTS = {"salad": "Tomato + Lettuce", "soup": "Tomato + Onion"}
 RECIPE_INGREDIENTS = {"salad": ("tomato", "lettuce"),
                       "soup": ("tomato", "onion")}
 ORDER_KINDS = ["salad", "soup"]
+
+# The updated CLI uses exactly these six dishes. Legacy fixtures and --legacy
+# retain ORDER_KINDS; both conditions use the same experiment catalogue.
+from recipes import MEAL_RECIPES, MEAL_KINDS
+RECIPE_INGREDIENTS.update({kind: r.ingredients for kind, r in MEAL_RECIPES.items()})
+INGREDIENTS.update({kind: " + ".join(i.capitalize() for i in r.ingredients)
+                    for kind, r in MEAL_RECIPES.items()})

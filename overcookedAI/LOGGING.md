@@ -1,5 +1,39 @@
 # Logging for the experiments (Person 4 report section)
 
+## Meal-period experiment update — 16 October 2026
+
+The default CLI now runs the reproducible six-recipe experiment described in
+[EXPERIMENT.md](EXPERIMENT.md). Both conditions use the same divided layout.
+The existing event/5 Hz position CSV and summary schema are retained. Event
+rows add `meal_period`; period transitions emit `meal_period` events. Main-loop
+snapshots now precede E-key interactions so human actions are captured.
+
+Each completed/aborted trial also writes `<run>_orders.csv` with a row for every
+precomputed order: condition, seed, layout, final score, scheduled and actual
+appearance time/period, delay, completion time, duration and outcome. Stable
+order IDs allow pairing by seed. Duration starts at actual appearance; TTL
+starts there too. Blocked arrivals are queued FIFO without resampling. Recipes
+are sampled according to their scheduled meal period, even when shown later.
+`completed`, `expired` and `missed` are order outcomes. Aborted unfinished rows
+have `censored=1` and `run_completed=0`; do not analyze them as full trials.
+
+The future schedule remains engine-only and is written to the ledger at trial
+end. No schedule, seed, RNG, engine callback or recorder is passed to a robot.
+Run filenames now use microseconds to preserve quick restarts. Summary metrics
+retain their calculations; `soups` includes tomato/potato soups, while sandwiches
+and mains can be counted from the ledger rather than being labeled as soups.
+No new functional-delay or concurrency aggregate is invented.
+
+Examples (from this folder):
+
+```powershell
+python main.py --robot reactive --seed 42 --participant P01 --condition reactive
+python main.py --robot anticipatory --seed 42 --participant P01 --condition anticipatory
+```
+
+The older report below describes the original logger. Its shared-kitchen and
+salad/soup examples require `--legacy` under the updated CLI.
+
 Status: 13 Oct 2026. This documents the logging added to `overcookedAI/` so
 that every human-played trial is stored for later comparison. It is written to
 be pasted into the report (methodology: data collection).

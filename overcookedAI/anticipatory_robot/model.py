@@ -13,10 +13,11 @@ import pygame
 import config as C
 from game import COMBOS, Station, chop_name
 from navigation import approach_point
+from recipes import MEAL_INGREDIENTS
 
 
 def ingredient_name(item):
-    return next((name for name in ("tomato", "lettuce", "onion")
+    return next((name for name in tuple(dict.fromkeys(("tomato", "lettuce", "onion") + MEAL_INGREDIENTS))
                  if item in (name, "chopped_" + name, "plated_" + name)), None)
 
 
@@ -97,7 +98,10 @@ class HumanIntentModel:
         available = [s for s in state.stations if s.owner in (None, "human", "shared")]
         priority = state.priority_order
         recipe = priority.kind if priority else None
-        if chop_name(item):
+        if getattr(state, "experiment", False) and ingredient:
+            candidates = [s for s in available if s.owner == "shared" and s.held is None]
+            action, confidence = "deliver " + ingredient, 0.85
+        elif chop_name(item):
             candidates = [s for s in available if s.kind == "board" and s.held is None]
             action, confidence = "chop " + item, 0.85
         elif item in ("salad", "soup"):
@@ -133,8 +137,13 @@ class HumanIntentModel:
                 action, confidence = "approach", 0.4
         heading = velocity.normalize() if velocity.length() > 20 else pygame.Vector2()
 
+        def human_approach(station):
+            if getattr(state, "experiment", False) and station.owner == "shared":
+                return pygame.Vector2(station.rect.left - 26, station.rect.centery)
+            return approach_point(station)
+
         def score(station):
-            delta = approach_point(station) - position
+            delta = human_approach(station) - position
             alignment = delta.normalize().dot(heading) if delta.length() else 0
             return delta.length() - 75 * alignment
 
@@ -142,13 +151,13 @@ class HumanIntentModel:
         if action == "chop" and goal:
             ingredient = goal.held
         if action == "approach" and goal and goal.kind.startswith("crate_"):
-            delta = approach_point(goal) - position
+            delta = human_approach(goal) - position
             if delta.length() and delta.normalize().dot(heading) > 0.5:
                 ingredient = goal.kind[6:]
         projected = position + velocity * 0.5
         if goal and velocity.length() > 20:
-            delta = approach_point(goal) - position
+            delta = human_approach(goal) - position
             if delta.length() < velocity.length() * 0.5:
-                projected = approach_point(goal)
+                projected = human_approach(goal)
         return HumanIntent(goal, action, ingredient, confidence if goal else 0.0,
                            velocity, projected)

@@ -1,5 +1,39 @@
 # Changes made to CookingAgents
 
+## Divided meal-period experiment (16 October 2026)
+
+The default CLI now uses the existing divided `reactive` kitchen for both robot
+conditions. Exactly six dishes are generated: cheese/ham sandwiches,
+tomato/potato soup, chicken with potatoes, and meat with vegetables. Missing
+dispensers are added to the existing map; the divider, handoffs, starts and
+robot equipment are preserved. Both conditions share preparation, cooking,
+movement, a 0.5-second startup delay, collision, scoring and duration rules.
+
+Breakfast, lunch and dinner last exactly 60 active game seconds each. New
+orders follow an 80/10/10 category distribution with equal within-category
+selection. A dedicated seeded RNG precomputes all fourteen scheduled orders;
+full queues retain pending arrivals FIFO, record delays and never resample.
+Robot constructors and updates receive allowlisted current observations with
+no future schedule, engine reference, seed, RNG or logging interface.
+
+The existing anticipatory model learns starters for the new recipes and
+recognizes human deliveries; it can prepare plates and preposition at inferred
+handoffs. It cannot fetch across the divider or use the old shared-kitchen
+takeover there. Reactive work depends only on current deliveries/inventory.
+New recipe logistics are shared through a small compatibility module rather
+than duplicating them across the old planners. Legacy algorithms and fixtures
+are preserved, with historical CLI gameplay behind `--legacy`.
+
+Added per-order CSV ledgers with timing, outcome and pairing metadata, meal
+periods in event logs, and microsecond run IDs. Fixed snapshots to capture
+actual human E-key interactions. Existing position/action metrics remain.
+See `overcookedAI/EXPERIMENT.md` for recipes, commands, exact schedule/queue
+semantics, files and limitations. All changes are local and uncommitted.
+
+Verification: all 135 tests passed (113 existing unchanged plus 22 new), with
+no failures or skips. Headless UI checks covered all meal periods and six dish
+types. Human usability/efficacy trials have not been performed.
+
 ## Working divided-kitchen reactive agent (13 October 2026)
 
 Implemented `ReactiveRobot` for `--layout reactive` without altering the map.

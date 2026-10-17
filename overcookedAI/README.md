@@ -3,13 +3,30 @@
 The code requires **Python 3.10+**. On Windows, use Python 3.11 for the existing
 pygame requirement; pygame 2.6.1 has no Windows wheel for Python 3.14.
 
-## Current prototype: shared kitchen, salads and soups
+## Current experiment: divided kitchen and three meal periods
+
+```powershell
+python main.py --robot reactive --seed 42
+python main.py --robot anticipatory --seed 42
+```
+
+Both conditions use the same existing divided kitchen, six simple recipes,
+180 seconds of active gameplay and an identical precomputed schedule per seed.
+Breakfast/lunch/dinner each last 60 seconds with 80/10/10 category probabilities.
+The robot observations contain current orders only, without the engine schedule,
+seed or RNG. See [EXPERIMENT.md](EXPERIMENT.md) for recipes, exact commands,
+queue-delay rules, logs, verification and compatibility notes.
+
+The historical sections below describe the preserved salad/soup game and
+require `--legacy`. They are not the new six-recipe experiment.
+
+## Historical prototype: shared kitchen, salads and soups
 
 ```powershell
 # From this folder, activate the environment created with Python 3.11:
 .\.venv\Scripts\Activate.ps1
 python -m pip install -r requirements.txt
-python main.py --robot anticipatory --seed 0
+python main.py --legacy --robot anticipatory --seed 0
 ```
 
 This selects `shared` (the original kitchen geometry, all equipment accessible
@@ -86,8 +103,8 @@ Robot-only work does not add observations to the learned human starter history.
 To isolate one recipe during testing:
 
 ```powershell
-python main.py --robot anticipatory --recipe salad --seed 0
-python main.py --robot anticipatory --recipe soup --seed 0
+python main.py --legacy --robot anticipatory --recipe salad --seed 0
+python main.py --legacy --robot anticipatory --recipe soup --seed 0
 ```
 
 The robot infers your likely next station from the carried item, station contents
@@ -134,7 +151,7 @@ and returning to collaboration.
 Run the reactive robot in the divided kitchen:
 
 ```powershell
-python main.py --robot reactive --layout reactive --seed 0
+python main.py --legacy --robot reactive --layout reactive --seed 0
 ```
 
 A solid divider runs across the entire playable height. Two purple handoff
@@ -186,7 +203,10 @@ routines remain possible later extensions, outside the first prototype.
 
 ## Structure
 ```
-main.py             entry point / main loop (--robot, --layout, --seed)
+main.py             experiment entry point / main loop (--legacy for old modes)
+recipes.py          six experiment recipes and simple preparation rules
+experiment.py       seeded engine schedule and restricted robot observations
+meal_policy.py      shared new-recipe compatibility for both robot architectures
 config.py           constants and the original station layout (pixels)
 layouts.py          selectable layouts: scripted, shared, reactive, near, far, mixed, swap
 game.py             game logic: stations, orders, player, rules, scoring
@@ -214,8 +234,8 @@ run_sim.py, run_participant.py   stubs for later phases
 ## Run
 ```
 pip install -r requirements.txt
-python main.py                                   # scripted robot
-python main.py --robot none --layout far         # preview a layout
+python main.py --legacy --robot scripted          # original scripted robot
+python main.py --legacy --robot none --layout far # preview an old layout
 ```
 Layouts: `scripted | shared | reactive | near | far | mixed | swap`.
 Controls: WASD move, E interact, hold SPACE chop, B robot on/off, P pause,

@@ -17,6 +17,7 @@ from navigation import Navigator, approach_point
 from robot_base import RobotBase
 from robot_tasks import Task, execute_task
 from .model import HumanIntentModel, ingredient_name
+from meal_policy import MealPolicy
 
 
 class AnticipatoryRobot(RobotBase):
@@ -25,7 +26,8 @@ class AnticipatoryRobot(RobotBase):
     speed = C.ROBOT_SPEED
 
     def __init__(self, state):
-        if state.layout.name not in ("shared", "scripted"):
+        if state.layout.name not in ("shared", "scripted") and not (
+                getattr(state, "experiment", False) and state.layout.name == "reactive"):
             raise ValueError("Anticipatory prototype needs a shared kitchen")
         super().__init__(*state.layout.robot_start)
         self.model = HumanIntentModel()
@@ -55,6 +57,7 @@ class AnticipatoryRobot(RobotBase):
         self._events = []
         self._navigation_requested = False
         self._attempted_task = None
+        self.meal_policy = MealPolicy(self) if getattr(state, "experiment", False) else None
 
     def _reachable(self, station, state):
         bounds, obstacles = self.navigator._geometry(self, state)
@@ -180,7 +183,7 @@ class AnticipatoryRobot(RobotBase):
         if self.contribution_source == "routine" and self.routine_prediction:
             return self.routine_prediction.description
         if self.contribution_source == "default":
-            return "Expected start: tomato (initial assumption)"
+            return f"Expected start: {self.human_ingredient} (initial assumption)"
         return self.intent.description if self.intent else "Learning your first ingredient"
 
     def _store(self, state):
@@ -476,6 +479,9 @@ class AnticipatoryRobot(RobotBase):
 
     def update_ai(self, dt, state):
         """Update behaviour and publish diagnostics only when the decision changes."""
+        if getattr(state, "experiment", False):
+            self._update_meals(dt, state)
+            return
         self._events = []
         self._navigation_requested = False
         self._attempted_task = None
@@ -502,6 +508,33 @@ class AnticipatoryRobot(RobotBase):
                                                          or "Starting" in decision or not self.enabled)),
                                "autonomous": self.autonomous}
             logging.getLogger(__name__).info("robot_decision %s", json.dumps(self.diagnostic))
+
+    def _update_meals(self, dt, state):
+        if self.priority_order is not state.priority_order:
+            self.human_ingredient = None
+        self.priority_order = state.priority_order
+        self.intent = self.model.observe(state, dt)
+        self.routine_prediction = self.model.predict_start(self.recipe)
+        observed = ingredient_name(state.player.carrying)
+        if observed in self.ingredients:
+            self.human_ingredient, self.contribution_source = observed, "observed"
+        elif self.intent.ingredient in self.ingredients:
+            self.human_ingredient, self.contribution_source = self.intent.ingredient, "movement"
+        elif self.routine_prediction:
+            self.human_ingredient = self.routine_prediction.ingredient
+            self.contribution_source = "routine"
+        elif self.ingredients:
+            self.human_ingredient, self.contribution_source = self.ingredients[0], "default"
+        else:
+            self.human_ingredient, self.contribution_source = None, None
+        # The divider rules out autonomous ingredient fetching for BOTH robots.
+        # Anticipation prepares a plate and the predicted handoff approach only;
+        # it still uses the existing observed/learned human starter model.
+        counters = [s for s in state.stations if s.owner == "shared" and s.held is None]
+        counter = (self.intent.goal if self.intent.goal in counters else min(
+            counters, key=lambda s: pygame.Vector2(state.player.rect.center).distance_to(s.rect.center), default=None))
+        self.meal_policy.update(dt, state, anticipatory=True, expected_counter=counter,
+                                starting=state.elapsed < C.ROBOT_START_DELAY - 1e-9)
 
     def _update_ai(self, dt, state):
         previous_order = self.priority_order

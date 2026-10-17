@@ -13,6 +13,7 @@ from game import COMBOS
 from navigation import Navigator, approach_point
 from robot_base import RobotBase
 from robot_tasks import Task, execute_task
+from meal_policy import MealPolicy
 
 
 class ReactiveRobot(RobotBase):
@@ -35,6 +36,7 @@ class ReactiveRobot(RobotBase):
         self._route_cache_key = None
         self._route_cache = {}
         self._blocked_targets = set()
+        self.meal_policy = MealPolicy(self) if getattr(state, "experiment", False) else None
 
     @staticmethod
     def _approach(station):
@@ -217,6 +219,10 @@ class ReactiveRobot(RobotBase):
         return None
 
     def update_ai(self, dt, state):
+        if getattr(state, "experiment", False):
+            self.meal_policy.update(dt, state)
+            self.recipe = self.meal_recipe
+            return
         previous = self.task
         events = []
         self._blocked_targets = set()
