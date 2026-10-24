@@ -23,7 +23,7 @@ def place(actor, center):
 
 class SoupPriorityTests(unittest.TestCase):
     def setUp(self):
-        self.state = GameState(AnticipatoryRobot, seed=0, layout="shared", recipe="soup")
+        self.state = GameState(AnticipatoryRobot, seed=0, layout="shared", recipe="soup", legacy_menu=True)
         self.state.game_time -= C.ROBOT_START_DELAY
         place(self.state.player, (80, 350))
 
@@ -40,7 +40,7 @@ class SoupPriorityTests(unittest.TestCase):
 
     def test_default_mixed_mode_starts_with_both_recipes(self):
         for seed in range(10):
-            state = GameState(AnticipatoryRobot, seed=seed, layout="shared")
+            state = GameState(AnticipatoryRobot, seed=seed, layout="shared", legacy_menu=True)
             self.assertEqual({o.kind for o in state.orders}, {"salad", "soup"})
 
     def test_tomato_means_lettuce_when_salad_is_more_urgent(self):
@@ -129,16 +129,20 @@ class SoupPriorityTests(unittest.TestCase):
         self.assertEqual(self.state.robot.completed_soups, 1)
 
     def test_existing_partial_pot_can_start_collaboration(self):
+        self.state.orders = [Order("soup", 90)]
+        self.state.order_timer = -1000
         self.stations("pot")[0].contents = ["chopped_tomato"]
         self.tick(35)
         self.assertEqual(self.state.robot.completed_soups, 1)
 
     def test_plate_waits_for_cooking_before_scooping(self):
+        self.state.orders = [Order("soup", 90)]
+        self.state.order_timer = -1000
         pot = self.stations("pot")[0]
         pot.contents = ["chopped_tomato", "chopped_onion"]
         self.state.robot.carrying = "plate"
         place(self.state.robot, approach_point(pot))
-        self.tick(1)
+        self.tick(C.POT_TIME / 2)
         self.assertEqual(self.state.robot.carrying, "plate")
         self.assertEqual(self.state.robot.completed_soups, 0)
         self.tick(12)

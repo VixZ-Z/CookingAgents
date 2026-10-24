@@ -117,6 +117,7 @@ class Navigator:
         return True
 
     def _route(self, actor, goal, state, prediction):
+        goal = pygame.Vector2(goal)
         start = actor.pos + pygame.Vector2(actor.rect.size) / 2
         bounds, obstacles = self._geometry(actor, state)
         # Rounding can leave the continuous position fractionally inside an

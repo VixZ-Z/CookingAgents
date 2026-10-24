@@ -23,8 +23,8 @@ class ReactiveRobot(RobotBase):
     speed = C.ROBOT_SPEED
 
     def __init__(self, state):
-        if state.layout.name != "divided":
-            raise ValueError("Reactive robot requires the divided layout")
+        if state.layout.name not in ("divided", "shared", "scripted"):
+            raise ValueError("Reactive robot requires a divided or shared workspace")
         super().__init__(*state.layout.robot_start)
         self.navigator = Navigator()
         self.transition_model = HumanTransitionModel()
@@ -88,14 +88,14 @@ class ReactiveRobot(RobotBase):
 
     def _carried_task(self, item, recipe, state):
         own = self._surfaces(state, own=True)
-        if item in C.ORDER_KINDS:
+        if item in C.ALL_RECIPE_INGREDIENTS:
             if any(o.kind == item and o.time_left > 0 for o in state.orders):
                 return self._task([s for s in state.stations if s.kind == "serve"],
                                   "serve", item, "Serving " + item, item, state)
             return self._store(item, recipe, state)
         if recipe is None:
             return self._store(item, recipe, state)
-        if item in C.RECIPE_INGREDIENTS[recipe]:
+        if item in C.ALL_RECIPE_INGREDIENTS[recipe]:
             return self._task([s for s in own if s.kind == "board" and s.held is None],
                               "put", item, "Preparing " + item, recipe, state) or self._store(item, recipe, state)
         if recipe == "soup":
@@ -146,7 +146,7 @@ class ReactiveRobot(RobotBase):
                     and self._choose([s for s in own if s.held in ("chopped_tomato", "chopped_lettuce")], state)):
                 if not any(s.held in ("plated_tomato", "plated_lettuce") for s in own):
                     return self._plate(recipe, state)
-        for name in C.RECIPE_INGREDIENTS[recipe]:
+        for name in C.ALL_RECIPE_INGREDIENTS[recipe]:
             chopped = "chopped_" + name
             if recipe == "soup" and self._pot(chopped, state) is None:
                 continue
@@ -182,17 +182,21 @@ class ReactiveRobot(RobotBase):
                       and self._reachable(s, state) for item in s.contents]
         return all(any(item in items for item in (name, "chopped_" + name)
                        + (("plated_" + name,) if recipe == "salad" else ()))
-                   for name in C.RECIPE_INGREDIENTS[recipe])
+                   for name in C.ALL_RECIPE_INGREDIENTS[recipe])
 
     def _plan(self, state):
-        readiness = {kind: self._recipe_ready(kind, state) for kind in C.ORDER_KINDS}
+        from menu import RECIPES
+        if not state.legacy_menu:
+            from menu_planner import plan
+            return plan(self, state)
+        readiness = {kind: self._recipe_ready(kind, state) for kind in C.ALL_RECIPE_INGREDIENTS}
         orders = sorted((o for o in state.orders if o.time_left > 0),
                         key=lambda o: (not readiness[o.kind], o.time_left))
         if self.carrying:
             for order in orders:
                 if (self.carrying in (order.kind, "plate")
                         or any(self.carrying in (name, "chopped_" + name, "plated_" + name)
-                               for name in C.RECIPE_INGREDIENTS[order.kind])):
+                               for name in C.ALL_RECIPE_INGREDIENTS[order.kind])):
                     task = self._carried_task(self.carrying, order.kind, state)
                     if task and (task.action != "put" or task.station.kind == "board"):
                         return task
@@ -206,7 +210,7 @@ class ReactiveRobot(RobotBase):
                     return task
         # An expired/reprioritized order can leave its ingredient on our only
         # board. Clear that observed obstruction before processing new deliveries.
-        requested = {name for kind in seen for name in C.RECIPE_INGREDIENTS[kind]}
+        requested = {name for kind in seen for name in C.ALL_RECIPE_INGREDIENTS[kind]}
         if orders and any(s.owner == "shared" and s.held in requested for s in self._surfaces(state)):
             for board in self._surfaces(state, own=True):
                 if board.kind != "board" or board.held is None:
@@ -257,7 +261,7 @@ class ReactiveRobot(RobotBase):
                             if task.action == "serve":
                                 if task.item == "salad":
                                     self.completed_salads += 1
-                                else:
+                                elif task.item == "soup":
                                     self.completed_soups += 1
                 elif self.navigator.reason in ("no_route", "collision_rejected"):
                     self.status = "Waiting for a clear path to " + task.station.label

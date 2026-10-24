@@ -1,5 +1,26 @@
 # Logging for the experiments (Person 4 report section)
 
+## Six-dish menu extension (24 October 2026)
+
+CSV column names, time units, scoring and metric formulas are unchanged. Recipe
+IDs are stored in the existing `item` field of `order_new`, `serve` and
+`order_expired` events. `meal_period` events put BREAKFAST, LUNCH or DINNER in
+`item`; they use active seconds in `t`. Scheduled order arrivals retain their
+nominal active-time timestamp. `run_config.schedule_hash` identifies the complete
+seeded menu schedule; the logger alone reads it, never the robot planners.
+
+The `salads` summary remains a salad count; `soups` includes the legacy soup and
+Tomato Soup and Chicken Soup (and historical Potato Soup records). Sandwiches and mains contribute to the unchanged total served
+counts and are identifiable individually in event rows. The existing anticipation
+source classification is retained. The chart program also labels the
+`anticipatory` condition explicitly.
+
+Run filenames include a random suffix and are created exclusively, preventing
+same-second restarts from overwriting results. Existing experiment files are not
+rewritten. Runtime Git inspection is disabled; the existing commit metadata field
+is left empty. Test logs and chart validation are kept separately under
+`.test-tmp/menu-validation-*` at the repository root.
+
 Updated: 16 Oct 2026. This documents the logging added to `overcookedAI/` so
 that every human-played trial is stored for later comparison. It is written to
 be pasted into the report (methodology: data collection).
@@ -260,3 +281,11 @@ counter, using estimates made up to 15 s before it and naming the counter used.
   variants set `contribution_source`; ordinary reactive/scripted actions remain 0.
 * One human, so data is paired by seed and condition, not by participant
   population; see the experimental design (Person 3) for counterbalancing.
+
+## Adaptive collaboration diagnostics
+
+The `adaptive_anticipatory` condition uses the same metric formulas and columns.
+`collaboration_pattern` event rows contain per-recipe probabilities in JSON `info`,
+separate from experimental metrics. Existing diagnostic rows record changed plans.
+Preferences reset on new sessions/restarts. Chart labels include Adaptive
+Anticipatory; historical horizon conditions are unchanged.

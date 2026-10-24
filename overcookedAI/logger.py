@@ -17,7 +17,7 @@ import hashlib
 import json
 import os
 import re
-import subprocess
+import uuid
 import time
 
 import pygame
@@ -63,21 +63,24 @@ class RunRecorder:
         if not self.enabled:
             return
         self._robot = state.robot
-        self.run_id = time.strftime("%Y%m%d_%H%M%S")
+        self.run_id = time.strftime("%Y%m%d_%H%M%S") + "_" + uuid.uuid4().hex[:8]
         self.meta = dict(self.base_meta, run_id=self.run_id, score=0,
                          layout=state.layout.name)
         os.makedirs(self.log_dir, exist_ok=True)
         name = "_".join(str(self.meta[k]) for k in
                         ("participant", "robot", "layout", "condition"))
         self.path = os.path.join(self.log_dir, f"{name}_{self.run_id}.csv")
-        self._file = open(self.path, "w", newline="", encoding="utf-8")
+        self._file = open(self.path, "x", newline="", encoding="utf-8")
         self._writer = csv.DictWriter(self._file, FIELDS)
         self._writer.writeheader()
         self._order_ids, self._order_refs = {}, []
         self._pos_acc = 0.0
         self._last_status = None
+        self._last_meal_period = state.meal_period
+        self._log(0.0, "meal_period", "system", item=state.meal_period)
         self._last_diagnostic_revision = 0
         self._last_transition_revision = 0
+        self._last_preference_revision = 0
         self._last_horizon_time = -float("inf")
         self._last_horizon_key = None
         self._stats = {"served_human": 0, "served_robot": 0, "salads": 0,
@@ -103,11 +106,7 @@ class RunRecorder:
         """Parameters needed to reproduce and compare runs."""
         import config as C
         orders = [(o.kind, round(o.time_left, 1)) for o in state.orders]
-        try:
-            commit = subprocess.run(["git", "rev-parse", "--short", "HEAD"], capture_output=True,
-                                    text=True, timeout=2).stdout.strip()
-        except (OSError, subprocess.SubprocessError):
-            commit = ""
+        commit = ""  # Local experiments do not invoke Git.
         names = ("GAME_TIME", "PLAYER_SPEED", "ROBOT_SPEED", "CHOP_TIME", "POT_TIME",
                  "FIXED_H_SECONDS", "H_INTERACTION_SECONDS", "H_HANDOFF_LATENESS_WEIGHT",
                  "TRANSITION_MIN_SAMPLES", "TRANSITION_MIN_PROBABILITY", "HUMAN_IDLE_TIMEOUT",
@@ -116,7 +115,7 @@ class RunRecorder:
         return dict(commit=commit, parameters={n: getattr(C, n) for n in names},
                     fixed_h_used=horizon.fixed_seconds if horizon and horizon.mode == "fixed" else None,
                     initial_orders=orders,
-                    schedule_hash=hashlib.md5(json.dumps(orders).encode()).hexdigest()[:8])
+                    schedule_hash=hashlib.md5(json.dumps(state._arrivals or orders).encode()).hexdigest()[:8])
 
     def finish(self, state, completed: bool) -> None:
         """Close the current run and append its summary row."""
@@ -179,6 +178,9 @@ class RunRecorder:
         if self._file is None or self._prev is None:
             return
         prev, t = self._prev, state.elapsed
+        if state.meal_period != self._last_meal_period:
+            self._last_meal_period = state.meal_period
+            self._log(t, "meal_period", "system", item=state.meal_period)
         self.meta["score"] = state.score
         robot = state.robot
 
@@ -209,7 +211,8 @@ class RunRecorder:
                     served_order = order
         for order in state.orders:
             if not any(o is order for o in prev["orders"]):
-                self._log(t, "order_new", "system", item=order.kind,
+                self._log(order.scheduled_at if order.scheduled_at is not None else t,
+                          "order_new", "system", item=order.kind,
                           order_id=self._oid(order))
 
         # Actor actions (carried item changed) ---------------------------
@@ -255,6 +258,10 @@ class RunRecorder:
                 if pace.revision != self._last_pace_revision:
                     self._last_pace_revision = pace.revision
                     self._log(t, "pace", "robot", info=json.dumps(pace.snapshot()))
+            preferences = getattr(robot, "preferences", None)
+            if preferences and preferences.revision != self._last_preference_revision:
+                self._last_preference_revision = preferences.revision
+                self._log(t, "collaboration_pattern", "robot", info=json.dumps(preferences.snapshot()))
             transitions = getattr(robot, "transition_model", None)
             if transitions and transitions.revision != self._last_transition_revision:
                 self._last_transition_revision = transitions.revision
@@ -346,7 +353,10 @@ class RunRecorder:
 
     def _served(self, t, actor, item, station, order) -> None:
         self._stats["served_" + actor] += 1
-        self._stats["salads" if item == "salad" else "soups"] += 1
+        if item == "salad":
+            self._stats["salads"] += 1
+        elif item in ("soup", "tomato_soup", "potato_soup", "chicken_soup"):
+            self._stats["soups"] += 1
         if self._stats["first_serve_t"] == "":
             self._stats["first_serve_t"] = round(t, 1)
         self._log(t, "serve", actor, item, station,

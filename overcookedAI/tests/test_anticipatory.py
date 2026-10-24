@@ -26,7 +26,7 @@ def place(actor, center):
 
 class AnticipatoryTests(unittest.TestCase):
     def setUp(self):
-        self.state = GameState(AnticipatoryRobot, seed=0, layout="shared", recipe="salad")
+        self.state = GameState(AnticipatoryRobot, seed=0, layout="shared", recipe="salad", legacy_menu=True)
         self.state.game_time -= C.ROBOT_START_DELAY
 
     def stations(self, kind):
@@ -190,7 +190,7 @@ class AnticipatoryTests(unittest.TestCase):
         self.assertFalse(any(s.held in ("tomato", "lettuce") for s in self.state.stations))
 
     def test_original_scripted_robot_still_completes_orders(self):
-        state = GameState(ScriptedRobot, seed=0)
+        state = GameState(ScriptedRobot, seed=0, legacy_menu=True)
         for _ in range(1800):
             state.update(DT, (0, 0), False)
         self.assertGreater(state.score, 0)

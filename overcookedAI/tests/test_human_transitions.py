@@ -123,7 +123,7 @@ class TransitionArithmeticTests(unittest.TestCase):
         self.assertEqual(model.distribution("salad", chop), {chop: 1.0})
 
     def test_context_invalidation_preserves_history_and_breaks_the_chain(self):
-        state = GameState(None, seed=0, layout="shared", recipe="salad")
+        state = GameState(None, seed=0, layout="shared", recipe="salad", legacy_menu=True)
         order = state.priority_order
         model = HumanTransitionModel()
         train_pair(model, TAKE_TOMATO, PUT_BOARD)
@@ -141,7 +141,7 @@ class TransitionArithmeticTests(unittest.TestCase):
 
 class HumanEventTests(unittest.TestCase):
     def setUp(self):
-        self.state = GameState(None, seed=0, layout="shared", recipe="salad")
+        self.state = GameState(None, seed=0, layout="shared", recipe="salad", legacy_menu=True)
 
     def workflow(self, state):
         use(state, station(state, "crate_tomato"))
@@ -209,7 +209,7 @@ class HumanEventTests(unittest.TestCase):
     def test_both_agents_learn_identical_real_human_workflows(self):
         counts = []
         for robot, layout in ((AnticipatoryRobot, "shared"), (ReactiveRobot, "divided")):
-            state = GameState(robot, seed=0, layout=layout, recipe="salad")
+            state = GameState(robot, seed=0, layout=layout, recipe="salad", legacy_menu=True)
             state.robot.enabled = False
             self.workflow(state)
             state.update(DT, (0, 0), False)
@@ -226,7 +226,7 @@ class HumanEventTests(unittest.TestCase):
 
     def test_robot_interactions_and_chopping_never_train_the_model(self):
         for robot, layout in ((AnticipatoryRobot, "shared"), (ReactiveRobot, "divided")):
-            state = GameState(robot, seed=0, layout=layout, recipe="salad")
+            state = GameState(robot, seed=0, layout=layout, recipe="salad", legacy_menu=True)
             state.robot.enabled = False
             interact(state.robot, station(state, "crate_tomato"), state)
             board = station(state, "board", "robot" if layout == "divided" else None)
@@ -240,7 +240,7 @@ class HumanEventTests(unittest.TestCase):
     def test_two_real_routines_create_a_live_forecast_in_both_agents(self):
         for robot, layout in ((AnticipatoryRobot, "shared"), (ReactiveRobot, "divided")):
             with self.subTest(robot=robot.__name__):
-                state = GameState(robot, seed=0, layout=layout, recipe="salad")
+                state = GameState(robot, seed=0, layout=layout, recipe="salad", legacy_menu=True)
                 state.robot.enabled = False
                 crate = station(state, "crate_tomato")
                 counter = station(state, "counter", "shared" if layout == "divided" else None)
@@ -265,7 +265,7 @@ class HumanEventTests(unittest.TestCase):
 
 class TransitionPolicyTests(unittest.TestCase):
     def setUp(self):
-        self.state = GameState(AnticipatoryRobot, seed=0, layout="shared", recipe="salad")
+        self.state = GameState(AnticipatoryRobot, seed=0, layout="shared", recipe="salad", legacy_menu=True)
         self.state.game_time -= C.ROBOT_START_DELAY
 
     def test_learned_destination_overrides_rule_destination(self):
@@ -332,7 +332,7 @@ class TransitionPolicyTests(unittest.TestCase):
         self.assertEqual(self.state.robot.intent.source, "rules")
 
     def test_reactive_planning_ignores_an_available_transition_forecast(self):
-        state = GameState(ReactiveRobot, seed=0, layout="divided", recipe="salad")
+        state = GameState(ReactiveRobot, seed=0, layout="divided", recipe="salad", legacy_menu=True)
         handoffs = [s for s in state.stations if s.owner == "shared"]
         handoffs[0].held, handoffs[1].held = "chopped_tomato", "chopped_lettuce"
         before = state.robot._plan(state)
@@ -357,7 +357,7 @@ class TransitionLoggingTests(unittest.TestCase):
     def test_both_models_log_updates_once_without_counting_them_as_robot_actions(self):
         for robot, layout in ((AnticipatoryRobot, "shared"), (ReactiveRobot, "divided")):
             with self.subTest(robot=robot.__name__), tempfile.TemporaryDirectory() as folder:
-                state = GameState(robot, seed=0, layout=layout, recipe="salad")
+                state = GameState(robot, seed=0, layout=layout, recipe="salad", legacy_menu=True)
                 state.robot.enabled = False
                 rec = RunRecorder(dict(participant="T", robot=layout, condition="test",
                                        recipe="salad", seed=0), folder)

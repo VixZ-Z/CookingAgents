@@ -44,7 +44,7 @@ class LoggerTests(unittest.TestCase):
         return read(glob.glob(os.path.join(self.dir.name, "T01_*.csv"))[0])
 
     def test_robot_events_positions_and_anticipation_flag(self):
-        state = GameState(AnticipatoryRobot, seed=0, layout="shared")
+        state = GameState(AnticipatoryRobot, seed=0, layout="shared", legacy_menu=True)
         rows = self.run_log(state, 20)
         kinds = {r["kind"] for r in rows}
         self.assertEqual(kinds, {"event", "pos"})
@@ -62,7 +62,7 @@ class LoggerTests(unittest.TestCase):
         self.assertEqual(rows[-1]["info"], "aborted")
 
     def test_human_serve_and_summary_row(self):
-        state = GameState(None, seed=0, layout="shared")
+        state = GameState(None, seed=0, layout="shared", legacy_menu=True)
         state.orders.append(Order("salad", 50.0))
         serve = next(s for s in state.stations if s.kind == "serve")
         state.player.rect.center = (serve.rect.centerx, serve.rect.bottom + 20)
@@ -88,7 +88,7 @@ class LoggerTests(unittest.TestCase):
         self.assertGreater(int(summary[0]["score"]), 100)
 
     def test_diagnostic_wait_is_recorded_without_per_frame_rows(self):
-        state = GameState(AnticipatoryRobot, seed=0, layout="shared")
+        state = GameState(AnticipatoryRobot, seed=0, layout="shared", legacy_menu=True)
         state.orders = []
         state.order_timer = -1000
         rows = self.run_log(state, 2)
@@ -100,7 +100,7 @@ class LoggerTests(unittest.TestCase):
         self.assertIn("planned_path", diagnostics[-1])
 
     def test_reactive_delivery_records_diagnostics_and_zero_anticipation(self):
-        state = GameState(ReactiveRobot, seed=0, layout="divided", recipe="salad")
+        state = GameState(ReactiveRobot, seed=0, layout="divided", recipe="salad", legacy_menu=True)
         counters = [s for s in state.stations if s.owner == "shared"]
         counters[0].held = "chopped_tomato"
         counters[1].held = "chopped_lettuce"
@@ -120,7 +120,7 @@ class LoggerTests(unittest.TestCase):
         self.assertLess(len([r for r in rows if r["action"] == "diagnostic"]), 50)
 
     def test_disabled_recorder_writes_nothing(self):
-        state = GameState(None, seed=0, layout="shared")
+        state = GameState(None, seed=0, layout="shared", legacy_menu=True)
         rec = RunRecorder(META, self.dir.name, enabled=False)
         rec.start(state)
         rec.before(state)
@@ -133,3 +133,4 @@ class LoggerTests(unittest.TestCase):
 if __name__ == "__main__":
     pygame.init()
     unittest.main()
+

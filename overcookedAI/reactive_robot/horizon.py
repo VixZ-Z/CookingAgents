@@ -36,7 +36,7 @@ class HorizonRobot(ReactiveRobot):
         orders = [o for o in state.orders if o.time_left > 0]
         compatible = [o for o in orders if item == o.kind or any(
             item in (name, "chopped_" + name, "plated_" + name)
-            for name in C.RECIPE_INGREDIENTS[o.kind])]
+            for name in C.ALL_RECIPE_INGREDIENTS[o.kind])]
         return min(compatible, key=lambda o: o.time_left, default=None)
 
     def _cost(self, seconds):

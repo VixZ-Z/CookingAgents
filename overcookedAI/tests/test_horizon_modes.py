@@ -33,8 +33,8 @@ def place(actor, center):
     actor.pos.update(actor.rect.topleft)
 
 
-def make_state(robot=AnticipatoryFixedHRobot, recipe="salad"):
-    state = GameState(robot, seed=0, layout="divided", recipe=recipe)
+def make_state(robot=AnticipatoryFixedHRobot, recipe="salad", legacy_menu=True):
+    state = GameState(robot, seed=0, layout="divided", recipe=recipe, legacy_menu=True)
     state.orders = [Order(recipe, 150)]
     state.order_timer = -1000
     return state
@@ -140,10 +140,12 @@ class HorizonEstimateTests(unittest.TestCase):
         state.update(DT, (0, 0), False)
         before = state.robot.horizon.remaining
         position = state.player.rect.copy()
-        state.update(0.6, (0, 0), True)
-        state.update(0.6, (0, 0), True)
+        state.robot.horizon.REFRESH_SECONDS = C.CHOP_TIME / 10
+        state.robot.horizon._refresh_at = 0
+        state.update(C.CHOP_TIME * .4, (0, 0), True)
+        state.update(C.CHOP_TIME * .4, (0, 0), True)
         self.assertEqual(position, state.player.rect)
-        self.assertAlmostEqual(state.robot.horizon.estimate.chopping, 0.3)
+        self.assertAlmostEqual(state.robot.horizon.estimate.chopping, C.CHOP_TIME * .2)
         self.assertLess(state.robot.horizon.remaining, before)
 
     def test_blocked_handoffs_produce_unknown_not_a_straight_line_eta(self):
@@ -301,7 +303,7 @@ class HorizonPolicyTests(unittest.TestCase):
                         state = make_state(robot, recipe)
                         state.player.carrying = "tomato"
                         tick(state, 6)
-                        for name, counter in zip(C.RECIPE_INGREDIENTS[recipe],
+                        for name, counter in zip(C.ALL_RECIPE_INGREDIENTS[recipe],
                                                  [s for s in state.stations if s.owner == "shared"]):
                             state.player.carrying = ("chopped_" if chopped else "") + name
                             use(state, counter)
@@ -318,7 +320,8 @@ class HorizonPolicyTests(unittest.TestCase):
         schedules = [[(o.kind, o.time_left) for o in state.orders] for state in states]
         self.assertEqual(schedules[0], schedules[1])
         self.assertEqual(schedules[1], schedules[2])
-        self.assertEqual({o.kind for o in states[1].orders}, {"salad", "soup"})
+        from menu import RECIPES
+        self.assertTrue({o.kind for o in states[1].orders} <= set(RECIPES))
 
     def test_moving_human_collects_and_delivers_while_timing_policy_runs(self):
         for robot in (AnticipatoryFixedHRobot, AnticipatoryDynamicHRobot):

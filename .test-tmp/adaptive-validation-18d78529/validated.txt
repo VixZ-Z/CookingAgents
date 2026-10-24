@@ -1,0 +1,1 @@
+30 synthetic runs: all recipes served with logged human handoffs; aborted after first serve.

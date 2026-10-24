@@ -1,8 +1,8 @@
 """Entry point.
 
-    python main.py                                  # scripted robot, original map
+    python main.py                                  # reactive robot, divided kitchen
     python main.py --robot none --layout far        # preview a layout, human only
-    python main.py --robot anticipatory --seed 0   # shared kitchen, salads and soups
+    python main.py --robot anticipatory --layout divided --seed 0  # six-dish menu
 
 Robots : scripted | reactive | anticipatory_fixed_h | anticipatory_dynamic_h | anticipatory | none
 Layouts: scripted | shared | divided | near | far | mixed | swap
@@ -38,22 +38,40 @@ def get_robot_class(name: str):
     if name == "anticipatory_dynamic_h":
         from reactive_robot import AnticipatoryDynamicHRobot
         return AnticipatoryDynamicHRobot
+    if name == "adaptive_anticipatory":
+        from anticipatory_robot.adaptive import AdaptiveAnticipatoryRobot
+        return AdaptiveAnticipatoryRobot
     if name == "anticipatory":
         from anticipatory_robot import AnticipatoryRobot
         return AnticipatoryRobot
     raise ValueError(name)
 
 
+def configuration_error(robot, layout):
+    """Shared validation for the command-line and graphical launchers."""
+    if robot == "adaptive_anticipatory" and layout != "divided":
+        return "Adaptive Anticipatory requires Divided Kitchen."
+    if robot == "anticipatory" and layout not in ("shared", "scripted", "divided"):
+        return "The anticipatory robot uses the shared, scripted or divided kitchen."
+    if robot == "scripted" and layout != "scripted":
+        return "The scripted robot only works with the scripted kitchen."
+    if robot == "reactive" and layout not in ("divided", "shared", "scripted"):
+        return "Reactive robots require Divided Kitchen or Shared Kitchen."
+    if robot in ("anticipatory_fixed_h", "anticipatory_dynamic_h") and layout != "divided":
+        return "Handoff robots require Divided Kitchen. Select Divided Kitchen or another robot."
+    return None
+
+
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--robot", default="scripted",
+    ap.add_argument("--robot", default="reactive",
                     choices=["scripted", "reactive", "anticipatory_fixed_h", "anticipatory_dynamic_h",
-                             "anticipatory", "none"])
+                             "anticipatory", "adaptive_anticipatory", "none"])
     ap.add_argument("--layout", default=None, choices=LAYOUT_NAMES,
-                    help="default: scripted for scripted, shared for anticipatory, divided for reactive and anticipatory_*_h, else near")
+                    help="default: scripted for scripted, shared for anticipatory, divided for reactive, adaptive_anticipatory and anticipatory_*_h, else near")
     ap.add_argument("--seed", type=int, default=None)
     ap.add_argument("--recipe", choices=C.ORDER_KINDS,
-                    help="limit orders to one recipe; default includes salad and soup")
+                    help="limit orders to one recipe; default uses the six-dish meal schedule")
     ap.add_argument("--fixed-h", type=float, default=None,
                     help=f"seconds for anticipatory_fixed_h (default: {C.FIXED_H_SECONDS})")
     ap.add_argument("--game-time", type=float, default=None,
@@ -78,18 +96,26 @@ def main():
     if args.debug_agent:
         logging.basicConfig(level=logging.INFO, format="%(name)s: %(message)s")
 
-    divided_modes = ("reactive", "anticipatory_fixed_h", "anticipatory_dynamic_h")
+    divided_modes = ("adaptive_anticipatory", "reactive", "anticipatory_fixed_h", "anticipatory_dynamic_h")
     defaults = {"scripted": "scripted", "anticipatory": "shared",
                 **{mode: "divided" for mode in divided_modes}}
     layout = args.layout or defaults.get(args.robot, "near")
+    error = configuration_error(args.robot, layout)
+    if error:
+        ap.error(error)
+    try:
+        run_game(args, layout)
+    finally:
+        pygame.quit()
+
+
+def run_game(args, layout, menu_mode=False):
+    """Run one session (including R restarts); return 'menu' or 'quit'.
+
+    Both launchers use the same initialization, loop and recorder. The caller
+    owns application shutdown, allowing the graphical launcher to run again.
+    """
     recipe = args.recipe
-    if args.robot == "anticipatory":
-        if layout not in ("shared", "scripted"):
-            ap.error("the anticipatory prototype uses --layout shared or scripted")
-    if args.robot == "scripted" and layout != "scripted":
-        ap.error("the scripted robot only works with --layout scripted")
-    if args.robot in divided_modes and layout != "divided":
-        ap.error("reactive and anticipatory_*_h robots require --layout divided")
     robot_cls = get_robot_class(args.robot)
 
     pygame.init()
@@ -110,6 +136,7 @@ def main():
     recorder.start(state)
     paused = False
     running = True
+    result = "quit"
 
     while running:
         dt = min(clock.tick(C.FPS) / 1000.0, 0.05)
@@ -119,9 +146,18 @@ def main():
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 running = False
+                result = "quit"
+                break
+            elif (menu_mode and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1
+                  and pygame.Rect(View.MENU_BUTTON).collidepoint(event.pos)):
+                running = False
+                result = "menu"
+                break
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     running = False
+                    result = "menu" if menu_mode else "quit"
+                    break
                 elif event.key == pygame.K_r:
                     recorder.finish(state, completed=state.game_over)
                     state = create_state()
@@ -135,6 +171,8 @@ def main():
                 elif event.key == pygame.K_e and not state.game_over and not paused:
                     state.player_interact()
 
+        if not running:
+            break
         if not paused:
             keys = pygame.key.get_pressed()
             move = (keys[pygame.K_d] - keys[pygame.K_a],
@@ -144,10 +182,13 @@ def main():
             if state.game_over:
                 recorder.finish(state, completed=True)
 
-        view.draw(state, interaction_target(state.player, state.stations), paused)
+        if menu_mode:
+            view.draw(state, interaction_target(state.player, state.stations), paused, menu_mode=True)
+        else:
+            view.draw(state, interaction_target(state.player, state.stations), paused)
 
     recorder.finish(state, completed=state.game_over)
-    pygame.quit()
+    return result
 
 
 if __name__ == "__main__":

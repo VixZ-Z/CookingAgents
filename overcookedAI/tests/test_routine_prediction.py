@@ -22,7 +22,7 @@ def place(actor, center):
 
 class RoutinePredictionTests(unittest.TestCase):
     def setUp(self):
-        self.state = GameState(AnticipatoryRobot, seed=0, layout="shared")
+        self.state = GameState(AnticipatoryRobot, seed=0, layout="shared", legacy_menu=True)
         self.state.game_time -= C.ROBOT_START_DELAY
         self.state.order_timer = -1000
         place(self.state.player, (80, 350))
@@ -223,9 +223,10 @@ class RoutinePredictionTests(unittest.TestCase):
 
     def test_restart_starts_without_invented_history(self):
         self.record_start("salad", "tomato")
-        restarted = GameState(AnticipatoryRobot, seed=0, layout="shared")
+        restarted = GameState(AnticipatoryRobot, seed=0, layout="shared", legacy_menu=True)
         self.assertIsNone(restarted.robot.model.predict_start("salad"))
 
 
 if __name__ == "__main__":
     unittest.main()
+

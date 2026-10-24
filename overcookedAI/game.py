@@ -13,6 +13,7 @@ import pygame
 import config as C
 from layouts import get_layout
 from human_transitions import ActionSymbol, HumanActionEvent
+from menu import RECIPES, prepared, cooked_recipe, order_schedule, period_at
 
 CRATE_MAP = {"crate_tomato": "tomato", "crate_onion": "onion",
              "crate_lettuce": "lettuce"}
@@ -24,16 +25,21 @@ COMBOS = {
     frozenset(("plated_tomato", "chopped_lettuce")): "salad",
     frozenset(("plated_lettuce", "chopped_tomato")): "salad",
 }
+CRATE_MAP.update({"crate_" + name: name for r in RECIPES.values() for name in r.ingredients})
+CHOP_MAP.update({name: prepared(name) for r in RECIPES.values() for name in r.ingredients
+                 if prepared(name) != name})
+COMBOS.update({frozenset(r.ingredients): key for key, r in RECIPES.items() if not r.cook_seconds})
 
 
 @dataclass
 class Order:
     kind: str
     time_left: float
+    scheduled_at: float | None = None
 
     @property
     def name(self) -> str:
-        return self.kind.capitalize()
+        return RECIPES[self.kind].name if self.kind in RECIPES else self.kind.capitalize()
 
 
 @dataclass
@@ -93,7 +99,14 @@ def chop_name(item):
 
 
 def can_go_in_pot(item):
-    return item in ("chopped_tomato", "chopped_onion")
+    return item in ("chopped_tomato", "chopped_onion") or any(
+        r.cook_seconds and item in map(prepared, r.ingredients) for r in RECIPES.values())
+
+
+def compatible_pot(contents, item):
+    batch = set(contents) | {item}
+    return (batch <= {"chopped_tomato", "chopped_onion"} or any(
+        r.cook_seconds and batch <= set(map(prepared, r.ingredients)) for r in RECIPES.values()))
 
 
 def interaction_target(player, stations, who="human"):
@@ -115,6 +128,8 @@ def handle_counter_combinations(actor, station, state=None):
         return False
     result = COMBOS.get(frozenset((a, b)))
     if result:
+        if state is not None and not state.legacy_menu and result not in RECIPES:
+            return False
         actor.carrying = result
         station.held = None
         if state is not None and actor is state.player:
@@ -134,6 +149,8 @@ def interact(actor, station, state):
     if station.kind == "trash":
         actor.carrying = None
     elif station.kind in CRATE_MAP:
+        if not state.legacy_menu and actor is not state.player:
+            return  # All ingredient supplies belong to the human in current experiments.
         if actor.carrying is None:
             actor.carrying = CRATE_MAP[station.kind]
     elif station.kind == "plates":
@@ -156,18 +173,22 @@ def interact(actor, station, state):
     elif station.kind == "pot":
         if (actor.carrying and can_go_in_pot(actor.carrying)
                 and not station.ready and len(station.contents) < 2
+                and compatible_pot(station.contents, actor.carrying)
                 and actor.carrying not in station.contents):
             station.contents.append(actor.carrying)
             actor.carrying = None
             if len(station.contents) == 2:
                 station.progress = 0
         elif actor.carrying == "plate" and station.ready:
-            actor.carrying = "soup"
+            actor.carrying = cooked_recipe(station.contents) or "soup"
             station.contents.clear()
             station.progress = 0
             station.ready = False
+        elif actor.carrying is None and station.contents and not station.ready:
+            actor.carrying = station.contents.pop()
+            station.progress = 0
     elif station.kind == "serve":
-        if actor.carrying in ("salad", "soup"):
+        if actor.carrying in (C.ALL_RECIPE_INGREDIENTS if state.legacy_menu else C.ORDER_KINDS):
             order = min((o for o in state.orders
                          if o.kind == actor.carrying and o.time_left > 0),
                         key=lambda o: o.time_left, default=None)
@@ -184,8 +205,8 @@ def interact(actor, station, state):
         elif station.kind == "trash":
             action, item = "trash", before_item
         elif station.kind == "pot":
-            action = "scoop" if before_item == "plate" else "add_to_pot"
-            item = actor.carrying if action == "scoop" else before_item
+            action = "take_from_pot" if before_item is None else ("scoop" if before_item == "plate" else "add_to_pot")
+            item = actor.carrying if action in ("scoop", "take_from_pot") else before_item
         else:
             action = "take" if before_item is None else "put"
             item = actor.carrying if action == "take" else before_item
@@ -197,12 +218,17 @@ def interact(actor, station, state):
 # ----------------------------------------------------------------------
 class GameState:
     def __init__(self, robot_cls=None, seed: int | None = None,
-                 layout: str = "scripted", recipe: str | None = None):
-        if recipe is not None and recipe not in C.ORDER_KINDS:
+                 layout: str = "scripted", recipe: str | None = None,
+                 legacy_menu: bool = False):
+        allowed = C.ALL_RECIPE_INGREDIENTS if legacy_menu else C.ORDER_KINDS
+        if recipe is not None and recipe not in allowed:
             raise ValueError(f"Unknown recipe: {recipe}")
         self.rng = random.Random(seed)
-        self.order_kinds = [recipe] if recipe else C.ORDER_KINDS
-        self.layout = get_layout(layout)
+        legacy = legacy_menu
+        self.legacy_menu = legacy_menu
+        self.order_kinds = [recipe] if recipe else (["salad", "soup"] if legacy else list(RECIPES))
+        self.dynamic_menu = recipe in RECIPES or (recipe is None and not legacy)
+        self.layout = get_layout(layout, legacy=legacy)
         self.swapped = False
         self.walls = [pygame.Rect(*wall) for wall in self.layout.walls]
         self.stations = [
@@ -219,18 +245,37 @@ class GameState:
         self.game_over = False
         # Mixed-mode teammate starts with both recipes visible, then random orders.
         initial_kinds = []
-        if (recipe is None and robot_cls
+        if (not self.dynamic_menu and recipe is None and robot_cls
                 and getattr(robot_cls, "ensure_mixed_orders", False)):
             initial_kinds = list(self.order_kinds)
             self.rng.shuffle(initial_kinds)
-        for index in range(C.INITIAL_ORDERS):
-            self.add_order(initial_kinds[index] if index < len(initial_kinds) else None)
+        self._arrivals = order_schedule(seed, C.GAME_TIME, C.INITIAL_ORDERS,
+                                        C.ORDER_INTERVAL, C.ORDER_TTL, recipe) if self.dynamic_menu else ()
+        self._arrival_cursor = 0
+        if self.dynamic_menu:
+            self._release_orders()
+        else:
+            for index in range(C.INITIAL_ORDERS):
+                self.add_order(initial_kinds[index] if index < len(initial_kinds) else None)
         self.robot = robot_cls(self) if robot_cls else None
 
     def add_order(self, kind=None):
         if len(self.orders) < C.MAX_ORDERS:
             self.orders.append(Order(kind or self.rng.choice(self.order_kinds),
                                      self.rng.uniform(*C.ORDER_TTL)))
+
+    def _release_orders(self):
+        # Never gate scheduled arrivals on backlog: performance must not change exposure.
+        while self._arrival_cursor < len(self._arrivals):
+            when, kind, ttl = self._arrivals[self._arrival_cursor]
+            if when > self.elapsed + 1e-9:
+                break
+            self.orders.append(Order(kind, ttl - (self.elapsed - when), when))
+            self._arrival_cursor += 1
+
+    @property
+    def meal_period(self):
+        return period_at(self.elapsed)
 
     @property
     def priority_order(self):
@@ -271,6 +316,7 @@ class GameState:
         """Advance the game by dt seconds. `move` = (dx, dy) input."""
         if self.game_over:
             return
+        dt = min(max(0.0, dt), self.game_time)
         if any(move):
             # Attempts to move count too, including movement blocked by an obstacle.
             self.human_activity_revision += 1
@@ -290,6 +336,9 @@ class GameState:
         for st in self.stations:
             if st.kind == "pot" and len(st.contents) == 2 and not st.ready:
                 st.progress += dt
+                recipe = cooked_recipe(st.contents)
+                if recipe and st.progress >= RECIPES[recipe].cook_seconds:
+                    st.ready = True
                 if (set(st.contents) == {"chopped_tomato", "chopped_onion"}
                         and st.progress >= C.POT_TIME):
                     st.ready = True
@@ -304,6 +353,8 @@ class GameState:
                 self.orders.remove(order)
                 self.score = max(0, self.score - C.SCORE_EXPIRE_PENALTY)
         self.order_timer += dt
-        if self.order_timer >= C.ORDER_INTERVAL:
+        if self.dynamic_menu:
+            self._release_orders()
+        elif self.order_timer >= C.ORDER_INTERVAL:
             self.order_timer = 0
             self.add_order()

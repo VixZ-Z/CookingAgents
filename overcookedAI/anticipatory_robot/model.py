@@ -17,7 +17,7 @@ from human_transitions import HumanTransitionModel
 
 
 def ingredient_name(item):
-    return next((name for name in ("tomato", "lettuce", "onion")
+    return next((name for name in dict.fromkeys(n for pair in C.ALL_RECIPE_INGREDIENTS.values() for n in pair)
                  if item in (name, "chopped_" + name, "plated_" + name)), None)
 
 
@@ -59,7 +59,7 @@ class HumanIntentModel:
         self.previous_position = None
         self.previous_item = None
         self.starter_counts = {recipe: dict.fromkeys(ingredients, 0)
-                               for recipe, ingredients in C.RECIPE_INGREDIENTS.items()}
+                               for recipe, ingredients in C.ALL_RECIPE_INGREDIENTS.items()}
         self.last_starter = {}
         # Keep order references: equal recipes/deadlines are still distinct trials.
         self.observed_orders = []
@@ -105,7 +105,7 @@ class HumanIntentModel:
 
     def _learn_start(self, state, ingredient):
         order = state.priority_order
-        if (order is None or ingredient not in C.RECIPE_INGREDIENTS[order.kind]
+        if (order is None or ingredient not in C.ALL_RECIPE_INGREDIENTS[order.kind]
                 or ingredient == ingredient_name(self.previous_item)
                 or any(seen is order for seen in self.observed_orders)):
             return
@@ -148,7 +148,7 @@ class HumanIntentModel:
         if chop_name(item):
             candidates = [s for s in available if s.kind == "board" and s.held is None]
             action, confidence = "chop " + item, 0.85
-        elif item in ("salad", "soup"):
+        elif item in C.ORDER_KINDS:
             candidates = [s for s in available if s.kind == "serve"]
             action, confidence = "serve", 0.95
         elif item and item.startswith("chopped_"):
@@ -170,6 +170,9 @@ class HumanIntentModel:
                 candidates = [s for s in available if s.kind in ("board", "counter")
                               and s.held and frozenset((item, s.held)) in COMBOS]
                 action, confidence = "assemble salad", 0.7
+        elif ingredient:
+            candidates = [s for s in available if s.kind == "counter" and s.held is None]
+            action, confidence = "deliver " + ingredient, 0.75
         elif item is None:
             nearby = [s for s in available if s.kind == "board" and chop_name(s.held)
                       and position.distance_to(approach_point(s)) < 85]

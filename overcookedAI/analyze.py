@@ -40,10 +40,10 @@ import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.lines import Line2D  # noqa: E402
 from matplotlib.patches import Patch  # noqa: E402
 
-ORDER = ["reactive", "anticipatory_fixed_h", "anticipatory_dynamic_h"]
-LABELS = {"reactive": "Reactive", "anticipatory_fixed_h": "Fixed h",
-          "anticipatory_dynamic_h": "Dynamic h"}
-COLORS = {"reactive": "#8c8c8c", "anticipatory_fixed_h": "#1f77b4",
+ORDER = ["reactive", "anticipatory", "adaptive_anticipatory", "anticipatory_fixed_h", "anticipatory_dynamic_h"]
+LABELS = {"adaptive_anticipatory": "Adaptive Anticipatory", "reactive": "Reactive", "anticipatory_fixed_h": "Fixed h",
+          "anticipatory_dynamic_h": "Dynamic h", "anticipatory": "Anticipatory"}
+COLORS = {"adaptive_anticipatory": "#9467bd", "reactive": "#8c8c8c", "anticipatory_fixed_h": "#1f77b4",
           "anticipatory_dynamic_h": "#e6550d"}
 H_GROUPS = ("anticipatory_fixed_h", "anticipatory_dynamic_h")
 H_WINDOW = 15.0         # same window as the logger's h_outcome rows

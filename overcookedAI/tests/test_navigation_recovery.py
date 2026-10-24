@@ -19,7 +19,7 @@ def place(actor, position):
 
 class NavigationRecoveryTests(unittest.TestCase):
     def setUp(self):
-        self.state = GameState(AnticipatoryRobot, seed=0, layout="shared", recipe="salad")
+        self.state = GameState(AnticipatoryRobot, seed=0, layout="shared", recipe="salad", legacy_menu=True)
         self.robot = self.state.robot
         self.nav = self.robot.navigator
         place(self.state.player, (800, 400))
