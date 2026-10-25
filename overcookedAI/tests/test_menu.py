@@ -36,11 +36,13 @@ class MenuTests(unittest.TestCase):
         self.assertEqual(period_at(60), "LUNCH")
         self.assertEqual(period_at(119.999), "LUNCH")
         self.assertEqual(period_at(120), "DINNER")
-        original = state.orders[0]
+        original = state.priority_order
         state.update(60, (0, 0), False)
         self.assertEqual(state.meal_period, "LUNCH")
         self.assertTrue(any(o is original for o in state.orders))
-        self.assertGreater(len(state.orders), C.MAX_ORDERS)
+        self.assertIsNone(original.cancel_reason)
+        self.assertTrue(all(o is original or RECIPES[o.kind].category != "BREAKFAST"
+                            for o in state.orders))
         state.update(60, (0, 0), False)
         self.assertEqual(state.meal_period, "DINNER")
         state.update(1000, (0, 0), False)
@@ -56,8 +58,12 @@ class MenuTests(unittest.TestCase):
             states[0].orders.clear()
             for state in states:
                 state.update(15, (0, 0), False)
-            self.assertEqual(states[0].orders[-1].kind, states[1].orders[-1].kind)
-            self.assertEqual(states[0].orders[-1].time_left, states[1].orders[-1].time_left)
+            # An arrival from a finished meal is suppressed for both robots,
+            # even when only one of them has a backlog.
+            released = [[(o.kind, o.time_left) for o in state.orders
+                         if o.scheduled_at == state.elapsed] for state in states]
+            self.assertEqual(released[0], released[1])
+            self.assertEqual(states[0]._arrival_cursor, states[1]._arrival_cursor)
         self.assertEqual(order_schedule(44), order_schedule(44))
         self.assertNotEqual(order_schedule(44), order_schedule(45))
 
@@ -184,8 +190,9 @@ class MenuTests(unittest.TestCase):
                 self.assertIsNone(state.robot.carrying)
             for kind in ("board", "pot", "plates", "serve"):
                 stations = [s for s in state.stations if s.kind == kind and s.owner in (None, "robot")]
-                self.assertEqual(len(stations), 1)
-                self.assertTrue(nav._route(state.robot, menu_planner.approach(stations[0], state), state, None))
+                self.assertEqual(len(stations), 2 if kind == "pot" else 1)
+                for station in stations:
+                    self.assertTrue(nav._route(state.robot, menu_planner.approach(station, state), state, None))
 
     def test_proactive_plate_is_staged_once_without_creating_ingredients(self):
         for layout in ("divided", "shared"):
@@ -282,6 +289,9 @@ class MenuTests(unittest.TestCase):
 
     def test_changed_intention_recovers_pot_while_old_order_remains(self):
         state = GameState(AnticipatoryRobot, seed=0, layout="divided")
+        # Keep coverage of recovery when no second pot is available.
+        pots = [s for s in state.stations if s.kind == "pot"]
+        state.stations.remove(pots[1])
         target = Order("pasta_tomatoes", 150)
         state.orders = [Order("chicken_soup", 140), target]
         state.player.carrying = "pasta"
@@ -295,6 +305,36 @@ class MenuTests(unittest.TestCase):
                 break
         self.assertFalse(any(o is target for o in state.orders), state.robot.status)
         self.assertTrue(any(o.kind == "chicken_soup" for o in state.orders))
+        self.assertTrue(any(s.held == "chicken" for s in state.stations))
+
+    def test_forecast_alone_does_not_displace_an_active_batch(self):
+        state = GameState(AnticipatoryRobot, seed=0, layout="divided")
+        state.orders = [Order("chicken_soup", 140), Order("pasta_tomatoes", 150)]
+        state.player.carrying = "pasta"
+        pot = next(s for s in state.stations if s.kind == "pot")
+        pot.contents = ["chicken"]
+        for _ in range(300):
+            state.update(1 / 30, (0, 0), False)
+            self.assertEqual(pot.contents, ["chicken"])
+
+    def test_blocked_pot_without_storage_preserves_delivered_ingredients(self):
+        state = GameState(AnticipatoryRobot, seed=0, layout="divided")
+        state.orders = [Order("chicken_soup", 140), Order("pasta_tomatoes", 150)]
+        state.player.carrying = "pasta"
+        pots = [s for s in state.stations if s.kind == "pot"]
+        for pot in pots:
+            pot.contents = ["chicken"]
+        for counter in state.stations:
+            if counter.kind == "counter" and counter.owner == "robot":
+                counter.held = "bread"
+        handoffs = [s for s in state.stations if s.owner == "shared"]
+        for counter, ingredient in zip(handoffs, ("pasta", "tomato")):
+            counter.held = ingredient
+        for _ in range(300):
+            state.update(1 / 30, (0, 0), False)
+        self.assertTrue(all(pot.contents == ["chicken"] for pot in pots))
+        self.assertEqual([s.held for s in handoffs], ["pasta", "tomato"])
+        self.assertIsNone(state.robot.carrying)
 
     def test_human_can_prepare_and_serve_every_recipe_in_shared_kitchen(self):
         for key, recipe in RECIPES.items():

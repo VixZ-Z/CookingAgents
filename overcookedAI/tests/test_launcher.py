@@ -42,36 +42,42 @@ class LauncherTests(unittest.TestCase):
         self.assertFalse(options.no_log)
         self.assertEqual(before, random.getstate())
 
-    def test_all_robot_and_layout_buttons_and_validation(self):
+    def test_all_robot_buttons_use_the_fixed_session_settings(self):
         for robot, _ in launcher.ROBOTS:
-            for layout, _ in launcher.LAYOUTS:
-                self.menu.handle_event(click(self.menu.robot_buttons[robot]))
-                self.menu.handle_event(click(self.menu.layout_buttons[layout]))
-                self.assertEqual((self.menu.robot, self.menu.layout), (robot, layout))
-                options = self.menu.configuration()
-                valid = layout == "divided" or robot in ("none", "anticipatory", "reactive")
-                self.assertEqual(options is not None, valid)
-                if not valid:
-                    self.assertIn("Divided Kitchen", self.menu.error)
-                    with patch("launcher.run_game") as run:
-                        self.assertEqual(launcher.launch_selected(self.menu), "menu")
-                        run.assert_not_called()
+            self.menu.handle_event(click(self.menu.robot_buttons[robot]))
+            self.assertEqual(self.menu.robot, robot)
+            options = self.menu.configuration()
+            self.assertEqual((options.seed, options.game_time), (42, 180))
+            self.assertEqual(launcher.FIXED_LAYOUT, "divided")
 
     def test_edit_fields_and_toggle_logging(self):
-        for field, value in (("seed", "-27"), ("duration", "90.5")):
-            self.menu.handle_event(click(self.menu.fields[field]))
-            for char in value:
-                self.menu.handle_event(pygame.event.Event(pygame.KEYDOWN, key=ord(char), unicode=char, mod=0))
-            self.assertEqual(getattr(self.menu, field), value)
+        self.assertEqual(set(self.menu.fields), {"participant"})
+        self.menu.handle_event(click(self.menu.fields["participant"]))
+        for char in "P02_trial-1":
+            self.menu.handle_event(pygame.event.Event(pygame.KEYDOWN, key=ord(char), unicode=char, mod=0))
+        self.assertEqual(self.menu.participant, "P02_trial-1")
+        self.assertGreater(self.menu.logging_button.top, self.menu.fields["participant"].bottom)
         self.menu.handle_event(click(self.menu.logging_button))
         options = self.menu.configuration()
-        self.assertEqual((options.seed, options.game_time, options.no_log), (-27, 90.5, True))
-        for value in ("", "0", "-1", "nan", "inf"):
-            self.menu.duration = value
+        self.assertEqual((options.seed, options.game_time, options.no_log), (42, 180, True))
+        self.assertEqual(options.participant, "P02_trial-1")
+        for value in ("", "bad id", "ą", "x" * 25):
+            self.menu.participant = value
             self.assertIsNone(self.menu.configuration())
-        self.menu.duration = "180"
-        self.menu.seed = "2.5"
-        self.assertIsNone(self.menu.configuration())
+
+    def test_questionnaire_link_opens_browser_without_starting_a_session(self):
+        with patch("launcher.webbrowser.open", return_value=True) as browser:
+            self.assertIsNone(self.menu.handle_event(click(self.menu.form_link)))
+            browser.assert_called_once_with(launcher.FORM_URL, new=2)
+        self.assertGreater(self.menu.form_link.top, 606)
+        self.assertLessEqual(self.menu.form_link.bottom, C.HEIGHT)
+        self.assertFalse(self.menu.form_link.colliderect(self.menu.start_button))
+
+    def test_questionnaire_browser_failure_keeps_menu_usable(self):
+        with patch("launcher.webbrowser.open", return_value=False):
+            self.menu.handle_event(click(self.menu.form_link))
+        self.assertIn("browser", self.menu.error)
+        self.assertEqual(self.menu.handle_event(click(self.menu.start_button)), "start")
 
     def test_every_supported_selection_launches_real_game(self):
         previous_duration = C.GAME_TIME
@@ -81,11 +87,11 @@ class LauncherTests(unittest.TestCase):
             states.append(state)
             return state
         for robot, _ in launcher.ROBOTS:
-            for layout, _ in launcher.LAYOUTS:
+            for layout in (launcher.FIXED_LAYOUT,):
                 if main.configuration_error(robot, layout):
                     continue
                 with self.subTest(robot=robot, layout=layout):
-                    self.menu.robot, self.menu.layout = robot, layout
+                    self.menu.robot = robot
                     self.menu.logging_enabled = False
                     with patch("main.GameState", side_effect=create), patch("pygame.time.Clock") as clock:
                         clock.return_value.tick.return_value = 50
@@ -100,12 +106,13 @@ class LauncherTests(unittest.TestCase):
         self.assertTrue(all(s._arrivals == states[0]._arrivals for s in states))
 
     def test_two_completed_sessions_return_to_menu_with_separate_logs(self):
-        self.menu.duration = ".05"
         states, starts, recorders = [], [], []
         def create(*args, **kwargs):
             state = GameState(*args, **kwargs)
             states.append(state)
             starts.append((state.score, state.game_time, len(state.human_actions)))
+            # Reach the end screen quickly without exposing a duration setting.
+            state.game_time = .05
             return state
         previous_duration = C.GAME_TIME
         events = [[click(self.menu.start_button)], [], [escape()],
@@ -122,7 +129,7 @@ class LauncherTests(unittest.TestCase):
                     with patch("pygame.event.get", side_effect=events):
                         launcher.main()
             self.assertEqual(len(states), 2)
-            self.assertEqual(starts, [(0, .05, 0), (0, .05, 0)])
+            self.assertEqual(starts, [(0, 180, 0), (0, 180, 0)])
             self.assertTrue(all(s.game_over for s in states))
             self.assertIsNot(states[0].robot, states[1].robot)
             self.assertEqual(states[0]._arrivals, states[1]._arrivals)

@@ -1,5 +1,27 @@
 # Logging for the experiments (Person 4 report section)
 
+## Meal-end cancellation (25 October 2026, Python source only)
+
+Orders removed because their meal ends emit `order_cancelled`, with the recipe
+in `item`, the usual `order_id`, and `meal_end` in `info`. This occurs at 60,
+120 or 180 active seconds. These cancellations do not reduce score or increase
+the summary's `expired` or served counts. Timer expiry remains `order_expired`
+with its usual penalty. The yellow priority order at a meal boundary is preserved
+and logs normal serving or timer expiry rather than `order_cancelled`.
+CSV columns are unchanged. Later scheduled arrivals
+belonging to finished meals are not released, so they have no `order_new` event.
+
+## Output location and questionnaire (25 October 2026)
+
+The default output folder is `logs` beside `logger.py` when running from source,
+or beside `sys.executable` in a frozen build. It is independent of the working
+directory. Explicit `log_dir` values remain supported, including temporary test
+folders. Logging OFF creates no output.
+
+The graphical menu links to the questionnaire after instructions to play all
+three robot types and upload the generated log files. The link opens a browser;
+the participant chooses and uploads files manually. No automatic upload is added.
+
 ## Six-dish menu extension (24 October 2026)
 
 CSV column names, time units, scoring and metric formulas are unchanged. Recipe

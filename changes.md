@@ -1,5 +1,143 @@
 # Changes made to CookingAgents
 
+## Return raw ingredients to their supplies (25 October 2026)
+
+- Pressing E at a matching supply while carrying its raw ingredient returns it
+  and frees the human's hand. Other ingredients, chopped items and finished
+  dishes are not accepted. Robot access restrictions remain unchanged.
+- Returns emit successful human `put` events and CSV rows at the supply, without
+  changing score or counting as trash/handoffs. Learned return transitions are
+  feasible intent targets. Added the control to menu and in-game instructions.
+- All 235 source tests pass, covering all ingredients, incorrect returns,
+  robot restrictions, learned goals and logging. Packaged self-check now includes
+  actual E-key pickup/return for all eight supplies.
+- Rebuilt `dist/CookingAgents.exe`; the actual binary passed isolated checks for
+  all eight returns, three robot modes, two-pot cooking, music and CSV output.
+
+## Refresh standalone executable (25 October 2026)
+
+- Rebuilt `dist/CookingAgents.exe` with the current Python source, including meal
+  cleanup, preservation of the yellow priority order and the second cooking pot.
+- Extended the packaged self-check to verify the meal boundary and complete a
+  meal using the second pot while preserving an unrelated first-pot ingredient,
+  for Reactive, Anticipatory and Adaptive Anticipatory.
+- The actual EXE passed isolated checks without Python on PATH, including music,
+  restart/menu return and six CSV recordings plus summary beside the executable.
+  The latest source suite passed 230 tests. Participant logs were not modified.
+
+## Second cooking pot (Python only, 25 October 2026)
+
+- Added Cook 2 between Plates and Serve in the robot processing area. Both
+  experiment kitchens now have two pots; legacy fixtures retain their layouts.
+- Robots use another compatible pot before disturbing an unrelated batch and
+  prefer a compatible started batch to an empty pot. Split ingredients can be
+  consolidated into one stable batch without switching targets every frame.
+- Added checks across Reactive, Anticipatory and Adaptive Anticipatory for
+  alternate-pot cooking, preserved unrelated contents, batch consolidation and
+  access to both pots. Single-pot recovery remains covered by a dedicated fixture.
+- Python source only; the existing EXE has not been rebuilt.
+- Validation: all 230 tests pass; checked rendering and both pot approaches.
+
+## Preserve the current order at meal changes (Python only, 25 October 2026)
+
+- Meal-end cleanup now preserves the exact yellow priority order selected at
+  the boundary. Other orders from finished meals are cancelled as before.
+- The exemption persists on later frames rather than being reassigned each
+  update. The preserved order can be served or expire with its normal penalty.
+- Added checks for stable exemption, ordinary expiry, successful boundary-frame
+  serving and cancellation of non-priority orders. The EXE is not rebuilt.
+
+## Remove orders when their meal ends (Python only, 25 October 2026)
+
+- Cancel breakfast orders at 60 active seconds, lunch at 120 and dinner at 180,
+  before the robot can act on them on a boundary-crossing update.
+- Skip later arrivals from finished meal categories while preserving the seeded
+  schedule and allowing future-meal orders. Legacy-menu behavior is unchanged.
+- Meal-end cancellations do not incur missed-deadline penalties. CSV records
+  `order_cancelled` with reason `meal_end`, separately from expiry or serving.
+- Added checks for exact boundaries, large time steps, future/late arrivals,
+  score handling, robot actions and CSV/summary classification.
+- Validation: all 225 tests pass. The existing EXE's SHA-256 hash is unchanged.
+- The executable was not rebuilt; this change applies to Python source only.
+
+## Standalone Windows executable (25 October 2026)
+
+- Built `dist/CookingAgents.exe`, a single Windows x64 executable containing
+  Python, dependencies and music. Participants can run it without installing
+  Python or packages. The existing frozen-output path creates logs beside it.
+- Added `CookingAgents.spec`, pinned build requirements, `build_exe.ps1` and
+  `BUILDING.md` so the binary can be rebuilt after source changes.
+- Added an optional offline `--self-check` diagnostic for packaged verification.
+  Normal startup still opens the menu. Tests use a separate copy so diagnostic
+  logs do not mix with participant results.
+- Validation: all 219 source tests pass. The actual EXE passed isolated playback,
+  three-robot startup, mute/pause/restart, menu return and CSV/summary checks with
+  Python removed from PATH. Logs were created beside the copied executable,
+  not in its unrelated working directory.
+
+## Questionnaire link and stable log location (25 October 2026)
+
+- Added a clickable questionnaire link below the menu panels and existing
+  captions, with instructions to play all three robots and upload the log files.
+  The form opens in the default browser; uploads remain manual.
+- Default logs now go beside the source game files, or beside the executable in
+  a frozen build, rather than depending on the current working directory.
+  Explicit output folders and Logging OFF retain their existing behavior.
+- All 26 launcher/logging/experiment checks pass, including link activation,
+  browser failure handling and source/frozen output paths. Menu rendering checked.
+
+## Gameplay music (25 October 2026)
+
+- Added the supplied MP3 as `overcookedAI/assets/music/background.mp3` and a
+  small music controller. The track loops during gameplay at 30% volume.
+- M toggles music without affecting gameplay or recording; mute choice persists
+  across restarts and sessions within the application. P also pauses/resumes audio.
+  Music stops at game over, on returning to the menu, on quit and on session errors.
+- Added the M shortcut to both the main-menu guide and in-game instructions.
+  Missing audio devices or unavailable tracks do not prevent gameplay.
+- Added real MP3 decoding/playback checks with SDL's silent driver, including
+  working-directory independence, muting, pause, restart and session cleanup.
+- Validation: all 215 tests pass.
+
+## Simplified participant menu (25 October 2026)
+
+- Removed layout, seed and duration controls from the graphical launcher.
+  Sessions always use Divided Kitchen, seed 42 and 180 active seconds.
+- Moved the Logging ON/OFF button below Participant ID. Robot selection and
+  participant-ID editing remain available.
+- Replaced the previous right-side settings with a short task and controls guide,
+  including order urgency, ingredient collection, preparation and handoffs.
+- Updated launcher checks for fixed settings, participant validation, logging and
+  repeated sessions. All six launcher tests pass; rendering was checked headlessly.
+
+## Planner recovery and confirmed-handoff tests (25 October 2026)
+
+- Anticipatory sandwich assembly now checks every accessible robot/shared work
+  surface for the complementary ingredient before waiting at a handoff counter.
+  This fixes waiting for cheese or ham already available on Stage/Assemble.
+- A fully supplied selected cooked recipe can reclaim the only accessible pot
+  from an incompatible incomplete batch when storage is available. Recovered
+  ingredients are stored for the older order rather than immediately reloaded
+  or discarded. A forecast alone does not displace an active batch.
+- Cooking ingredients are collected only when a compatible pot can accept the
+  prepared item, preventing collection/staging loops and unnecessary pickups
+  when the pot is blocked and storage is full.
+- Updated the two adaptive-learning tests to confirm ingredient pickup through
+  game-rule interactions. Merely placing an ingredient, withdrawing it, or
+  removing it without an observable robot pickup does not train preferences.
+- Added regression checks for unconfirmed handoffs, preservation of recovered
+  chicken, forecast-only batch protection and blocked pots with full storage.
+- Validation: all 210 tests pass, including the seven previously failing cases.
+
+## Left-side potato and pasta supplies (25 October 2026)
+
+- Moved Potato and Pasta into the left column below Chicken and above Prep in
+  the experiment kitchens. Updated approach points for the three stacked supply
+  crates so they are accessed from the open aisle on the right.
+- Checked rendering, station reachability and human preparation of all six
+  recipes. Full suite: 200 of 207 tests pass; the same seven failures also occur
+  with the original layout/navigation, verified separately without changing files.
+
 ## Reactive fixed/dynamic h modes (16 October 2026)
 
 - Added `--robot reactive_fixed_h` and `--robot reactive_dynamic_h`. Both use the

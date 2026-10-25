@@ -79,6 +79,8 @@ class HumanIntentModel:
                         or (station.kind == "plates" and target.item == "plate")
                         or (station.kind in ("board", "counter") and station.held == target.item))
             if target.action == "put" and carried == target.item:
+                if station.kind == "crate_" + carried:
+                    return True
                 return station.held is None and (
                     station.kind == "counter" or (station.kind == "board"
                     and (chop_name(carried) or carried.startswith("chopped_"))))

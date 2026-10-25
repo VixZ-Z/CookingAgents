@@ -16,7 +16,9 @@ import csv
 import hashlib
 import json
 import os
+from pathlib import Path
 import re
+import sys
 import uuid
 import time
 
@@ -46,10 +48,16 @@ POS_PERIOD = 1.0 / 5          # position samples at 5 Hz of game time
 ANTICIPATING_SOURCES = ("routine", "default", "movement", "transition", "horizon")
 
 
+def default_log_directory():
+    """Keep participant output beside the game, including frozen executables."""
+    game_dir = Path(sys.executable).resolve().parent if getattr(sys, "frozen", False) else Path(__file__).resolve().parent
+    return game_dir / "logs"
+
+
 class RunRecorder:
-    def __init__(self, meta: dict, log_dir: str = "logs", enabled=True):
+    def __init__(self, meta: dict, log_dir=None, enabled=True):
         self.base_meta = meta
-        self.log_dir = log_dir
+        self.log_dir = os.fspath(default_log_directory() if log_dir is None else log_dir)
         self.enabled = enabled
         self._file = None
         self._prev = None
@@ -203,7 +211,10 @@ class RunRecorder:
         # Compare orders by identity: their time_left changes every frame.
         for order in prev["orders"]:
             if not any(o is order for o in state.orders):
-                if order.time_left <= 0:
+                if order.cancel_reason:
+                    self._log(t, "order_cancelled", "system", item=order.kind,
+                              order_id=self._oid(order), info=order.cancel_reason)
+                elif order.time_left <= 0:
                     self._stats["expired"] += 1
                     self._log(t, "order_expired", "system", item=order.kind,
                               order_id=self._oid(order))

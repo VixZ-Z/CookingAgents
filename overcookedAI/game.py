@@ -13,7 +13,7 @@ import pygame
 import config as C
 from layouts import get_layout
 from human_transitions import ActionSymbol, HumanActionEvent
-from menu import RECIPES, prepared, cooked_recipe, order_schedule, period_at
+from menu import RECIPES, prepared, cooked_recipe, order_schedule, period_at, meal_end_time
 
 CRATE_MAP = {"crate_tomato": "tomato", "crate_onion": "onion",
              "crate_lettuce": "lettuce"}
@@ -36,6 +36,7 @@ class Order:
     kind: str
     time_left: float
     scheduled_at: float | None = None
+    cancel_reason: str | None = None
 
     @property
     def name(self) -> str:
@@ -153,6 +154,10 @@ def interact(actor, station, state):
             return  # All ingredient supplies belong to the human in current experiments.
         if actor.carrying is None:
             actor.carrying = CRATE_MAP[station.kind]
+        elif actor.carrying == CRATE_MAP[station.kind]:
+            # Supplies are unlimited; returning the matching raw ingredient
+            # frees the hand without changing any recipe or prepared item.
+            actor.carrying = None
     elif station.kind == "plates":
         if actor.carrying is None:
             actor.carrying = "plate"
@@ -243,6 +248,8 @@ class GameState:
         self.game_time = float(C.GAME_TIME)
         self.order_timer = 0.0
         self.game_over = False
+        self._meal_cutoff_index = 0
+        self._meal_carryover = None
         # Mixed-mode teammate starts with both recipes visible, then random orders.
         initial_kinds = []
         if (not self.dynamic_menu and recipe is None and robot_cls
@@ -270,8 +277,23 @@ class GameState:
             when, kind, ttl = self._arrivals[self._arrival_cursor]
             if when > self.elapsed + 1e-9:
                 break
-            self.orders.append(Order(kind, ttl - (self.elapsed - when), when))
+            if self.elapsed + 1e-9 < meal_end_time(kind):
+                self.orders.append(Order(kind, ttl - (self.elapsed - when), when))
             self._arrival_cursor += 1
+
+    def _cancel_ended_meals(self, elapsed):
+        """Retire old meal orders, preserving the priority order at the boundary."""
+        if not self.dynamic_menu:
+            return
+        cutoff = min(3, int((elapsed + 1e-9) // 60))
+        if cutoff > self._meal_cutoff_index:
+            self._meal_carryover = self.priority_order
+            self._meal_cutoff_index = cutoff
+        for order in self.orders[:]:
+            if (order is not self._meal_carryover and order.kind in RECIPES
+                    and elapsed + 1e-9 >= meal_end_time(order.kind)):
+                order.cancel_reason = "meal_end"
+                self.orders.remove(order)
 
     @property
     def meal_period(self):
@@ -317,6 +339,8 @@ class GameState:
         if self.game_over:
             return
         dt = min(max(0.0, dt), self.game_time)
+        # Remove old work before the robot can act on a boundary-crossing frame.
+        self._cancel_ended_meals(self.elapsed + dt)
         if any(move):
             # Attempts to move count too, including movement blocked by an obstacle.
             self.human_activity_revision += 1

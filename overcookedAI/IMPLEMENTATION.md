@@ -1,3 +1,92 @@
+# Ingredient returns (25 October 2026)
+
+The human can press E at a supply to return its matching raw ingredient. Other
+items remain in hand; supplies remain unlimited and robot restrictions are
+unchanged. Returns are observable `put` actions, included in transition learning
+and CSV logging, without score changes or handoff attribution. Both instruction
+panels explain the control. All 235 source tests pass; the packaged check exercises
+pickup and return at all eight supplies.
+
+# Executable rebuilt with meal cleanup and two pots (25 October 2026)
+
+`../dist/CookingAgents.exe` now includes the latest meal-end cancellation rules,
+yellow-order preservation and both cooking pots. Its isolated self-check passed
+all three robot sessions, actual second-pot meal completion without disturbing
+the first batch, meal cleanup, bundled music and six session logs beside the EXE.
+The latest source suite passed all 230 tests before this rebuild. The earlier
+source-only notes below describe the state before this executable refresh.
+
+# Second cooking pot (Python source only, 25 October 2026)
+
+Added Cook 2 in the robot processing area at (926, 120), between Plates and Serve.
+Both experiment layouts use two pots. All three menu robots can keep an unrelated
+batch in the first pot and prepare the selected dish in the other. Compatible
+started batches take precedence over empty pots, and a usable pot is preferred
+over recovering unrelated ingredients. Separate ingredients of the same recipe
+can be consolidated into a stable destination pot without alternating targets.
+Legacy layouts are unchanged. The executable has not been rebuilt.
+
+# Meal-end order cancellation (Python source only, 25 October 2026)
+
+Breakfast orders are cancelled at 60 active seconds, lunch at 120 and dinner at
+180. The yellow priority order is captured at each boundary and preserved on
+subsequent frames; completing or normally expiring it does not promote another
+old order into exemption. Its timer and expiry penalty are unchanged.
+Removal happens before the robot acts on a frame crossing a boundary.
+Future-meal orders remain available; later scheduled arrivals for finished meal
+categories are consumed from the immutable schedule but not released. The same
+schedule/filter is used for every robot. Legacy-menu fixtures are unaffected.
+Meal-end removals have no score penalty and emit `order_cancelled` with
+`info=meal_end`, distinct from timer expiry and serving. CSV columns are unchanged.
+The existing executable has not been rebuilt and retains its earlier behavior.
+Validation: all 225 tests pass; the executable's SHA-256 hash is unchanged.
+
+# Standalone Windows build (25 October 2026)
+
+The ready-to-run single-file build is `../dist/CookingAgents.exe` (Windows x64,
+approximately 34 MB). Python, libraries and music are bundled. Frozen logging
+uses the executable's directory, not the temporary extraction or working folder.
+See `BUILDING.md` for reproduction and automated verification details.
+All 219 source tests and the actual executable's isolated self-check passed.
+
+# Gameplay music (25 October 2026)
+
+The supplied MP3 is bundled in `assets/music/background.mp3`. `music.py` manages
+looped session playback, M mute/unmute, P pause/resume and cleanup on game over,
+menu return, exit or session exceptions. The mute preference survives R and new
+sessions within the application; the menu is silent. Assets resolve relative to
+the module, and unavailable audio does not block gameplay. Both instruction
+panels list M. Tests use SDL's silent audio driver to decode the actual MP3 and
+exercise playback controls and game-loop integration.
+Validation: all 215 tests pass.
+
+# Simplified launcher (25 October 2026)
+
+The graphical menu exposes robot selection, Participant ID and Logging ON/OFF.
+Divided Kitchen, seed 42 and a 180-second active session are fixed. The logging
+toggle sits below Participant ID; the right panel contains a short task and
+controls guide. CLI configuration remains available independently.
+All six launcher tests pass, including real session startup, return to menu,
+logging and fixed session settings. The updated menu was also rendered headlessly.
+
+# Planner and handoff-test fixes (25 October 2026)
+
+Anticipatory sandwich assembly now uses compatible ingredients on any accessible
+robot/shared surface before waiting for a new handoff. When a selected cooked
+recipe is fully supplied, an incompatible incomplete pot batch can be recovered
+into available storage. Its ingredients remain available for the older order.
+Predictions alone do not displace active batches, and ingredients are not fetched
+for a blocked pot without a feasible cooking destination.
+
+The two previously failing preference tests now confirm actual robot pickups
+through game rules. Ingredient placements remain provisional; human withdrawals
+and unexplained removals do not train the collaboration model. This preserves
+the distinction between human assembly and ingredient delivery.
+
+Validation: all 210 tests pass, including the seven previously failing cases.
+
+The following sections record earlier implementation stages.
+
 # Adaptive Anticipatory update
 
 The graphical launcher now offers only Divided Kitchen and three robots: Reactive,
@@ -60,7 +149,7 @@ Both kitchens have eight unique, human-owned ingredient crates. Robots cannot
 collect ingredients from any crate. Divided Kitchen separates human supplies and
 preparation from robot processing, assembly, cooking and serving, linked by two
 purple handoff counters. Shared Kitchen uses the same supplies in an open
-workspace; processing stations are available to both actors. Each has one pot,
+workspace; processing stations are available to both actors. Each now has two pots,
 one plate supply, one serving station, and one board for each preparation role.
 Shared Kitchen has one trash station; divided zones each need accessible trash.
 
@@ -75,7 +164,8 @@ The default session lasts 180 active seconds. Meal boundaries remain exactly 60
 and 120 seconds; sampling is 80/10/10 by category and 50/50 within each category.
 A dedicated seeded generator creates three initial orders and one every 15 seconds
 through 165. Backlog and robot behavior cannot alter scheduled exposure. Pausing
-freezes active time. Meal changes retain current orders, which expire normally.
+freezes active time. Meal-end cancellation supersedes the previous behavior of
+retaining old meal orders, as described in the source-only update above.
 
 Ingredient colors and abbreviations are consistent on crates, items and pots;
 processing stations have distinct colors and handoffs remain purple.

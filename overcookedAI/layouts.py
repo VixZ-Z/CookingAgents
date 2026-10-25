@@ -114,7 +114,7 @@ def experiment_layout(name):
     base = LAYOUTS[name]
     names = ("bread", "cheese", "ham", "tomato", "water", "chicken", "potato", "pasta")
     slots = [(50, 120), (142, 120), (234, 120), (326, 120), (418, 120),
-             (50, 250), (142, 250), (234, 250)]
+             (50, 250), (50, 318), (50, 386)]
     supplies = [(x, y, "crate_" + ingredient, ingredient.title(), HUMAN)
                 for ingredient, (x, y) in zip(names, slots)]
     divided = name == "divided"
@@ -126,6 +126,7 @@ def experiment_layout(name):
     stations += [
         (650, 120, "board", "Chop", processor),
         (742, 120, "pot", "Cook", processor),
+        (926, 120, "pot", "Cook 2", processor),
         (834, 120, "plates", "Plates", processor),
         (1018, 120, "serve", "Serve", processor),
         (650, 510, "counter", "Stage", processor),

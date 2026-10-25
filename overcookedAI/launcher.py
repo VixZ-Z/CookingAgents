@@ -1,6 +1,6 @@
 """Run this file in PyCharm to configure and play CookingAgents graphically."""
 from argparse import Namespace
-import math
+import webbrowser
 
 import pygame
 
@@ -15,6 +15,11 @@ ROBOTS = (
     ("adaptive_anticipatory", "Adaptive Anticipatory"),
 )
 LAYOUTS = (("divided", "Divided Kitchen"),)
+FIXED_LAYOUT = "divided"
+FIXED_SEED = 42
+FIXED_DURATION = 180
+FORM_URL = "https://docs.google.com/forms/d/e/1FAIpQLScQfNMbLyOI7yvRXV2vJtdfgSkhJH2GyVaKQ8oKcw0rEnQBUg/viewform"
+FORM_LINK_LABEL = "Open questionnaire and upload logs"
 
 
 class MainMenu:
@@ -22,52 +27,35 @@ class MainMenu:
 
     def __init__(self):
         self.robot = "reactive"
-        self.layout = "divided"
-        self.seed = "42"
         self.participant = "P001"
-        self.duration = "180"
         self.logging_enabled = True
         self.focus = None
         self.select_all = False
         self.error = ""
         self.robot_buttons = {key: pygame.Rect(80, 211 + i * 51, 420, 42)
                               for i, (key, _) in enumerate(ROBOTS)}
-        self.layout_buttons = {key: pygame.Rect(570 + i * 225, 211, 215, 46)
-                               for i, (key, _) in enumerate(LAYOUTS)}
-        self.fields = {"seed": pygame.Rect(570, 316, 200, 46),
-                       "duration": pygame.Rect(800, 316, 210, 46),
-                       "participant": pygame.Rect(80, 442, 420, 46)}
-        self.logging_button = pygame.Rect(570, 396, 440, 48)
-        self.start_button = pygame.Rect(660, 630, 250, 55)
-        self.quit_button = pygame.Rect(930, 630, 110, 55)
+        self.fields = {"participant": pygame.Rect(80, 418, 420, 46)}
+        self.logging_button = pygame.Rect(80, 486, 420, 48)
+        self.start_button = pygame.Rect(80, 650, 260, 55)
+        self.quit_button = pygame.Rect(360, 650, 140, 55)
         self.title_font = pygame.font.SysFont("arial", 42, bold=True)
         self.font = pygame.font.SysFont("arial", 22)
         self.small = pygame.font.SysFont("arial", 17)
+        self.notice_font = pygame.font.SysFont("arial", 20, bold=True)
+        self.form_link = pygame.Rect((570, 660), self.small.size(FORM_LINK_LABEL))
 
     def configuration(self):
         """Build the existing CLI options shape, or explain invalid input."""
         self.error = ""
-        try:
-            seed = int(self.seed.strip())
-        except ValueError:
-            self.error = "Random seed must be a whole number, for example 42."
-            return None
-        try:
-            duration = float(self.duration)
-        except ValueError:
-            duration = float("nan")
-        if not math.isfinite(duration) or duration <= 0:
-            self.error = "Game duration must be a positive number of seconds."
-            return None
         participant = self.participant.strip()
         if not participant or len(participant) > 24 or not all(
                 c.isascii() and (c.isalnum() or c in "_-") for c in participant):
             self.error = "Participant ID: use 1-24 letters, digits, - or _."
             return None
-        self.error = configuration_error(self.robot, self.layout) or ""
+        self.error = configuration_error(self.robot, FIXED_LAYOUT) or ""
         if self.error:
             return None
-        return Namespace(robot=self.robot, seed=seed, game_time=duration,
+        return Namespace(robot=self.robot, seed=FIXED_SEED, game_time=FIXED_DURATION,
                          recipe=None, fixed_h=None, participant=participant,
                          condition=self.robot, no_log=not self.logging_enabled)
 
@@ -82,12 +70,17 @@ class MainMenu:
                     self.focus, self.select_all = key, True
                     return None
             self.error = ""
+            if self.form_link.collidepoint(event.pos):
+                try:
+                    opened = webbrowser.open(FORM_URL, new=2)
+                except webbrowser.Error:
+                    opened = False
+                if not opened:
+                    self.error = "Could not open the questionnaire. Please check your default browser."
+                return None
             for key, rect in self.robot_buttons.items():
                 if rect.collidepoint(event.pos):
                     self.robot = key
-            for key, rect in self.layout_buttons.items():
-                if rect.collidepoint(event.pos):
-                    self.layout = key
             if self.logging_button.collidepoint(event.pos):
                 self.logging_enabled = not self.logging_enabled
             if self.start_button.collidepoint(event.pos):
@@ -110,14 +103,12 @@ class MainMenu:
                     return None
                 if event.key == pygame.K_BACKSPACE:
                     value = "" if self.select_all else value[:-1]
-                elif event.unicode and (
-                        (self.focus == "participant" and event.unicode.isascii()
-                         and (event.unicode.isalnum() or event.unicode in "_-"))
-                        or (self.focus != "participant" and event.unicode in "0123456789.-")):
+                elif (event.unicode and event.unicode.isascii()
+                      and (event.unicode.isalnum() or event.unicode in "_-")):
                     value = ("" if self.select_all else value) + event.unicode
                 else:
                     return None
-                setattr(self, self.focus, value[:24] if self.focus == "participant" else value[:16])
+                setattr(self, self.focus, value[:24])
                 self.select_all = False
                 self.error = ""
         return None
@@ -127,6 +118,7 @@ class MainMenu:
         for x in range(0, C.WIDTH, 80):
             pygame.draw.line(screen, (195, 185, 165), (x, 0), (x, C.HEIGHT))
         accent = OWNER_EDGE["robot"]
+        right_offset = -40
 
         def text(value, point, font=None, color=WHITE):
             screen.blit((font or self.font).render(value, True, color), point)
@@ -140,18 +132,14 @@ class MainMenu:
             screen.blit(label_image, label_image.get_rect(center=rect.center))
 
         text("CookingAgents", (60, 40), self.title_font, DARK)
-        text("Configure your kitchen experiment", (62, 98), color=DARK)
-        for rect in ((60, 155, 460, 380), (550, 155, 490, 380)):
+        text("Choose your robot teammate", (62, 98), color=DARK)
+        for rect in ((60, 155, 460, 405), (550, 155 + right_offset, 490, 405)):
             pygame.draw.rect(screen, DARK, rect, border_radius=12)
         text("ROBOT TYPE", (80, 173), self.small, accent)
-        text("KITCHEN LAYOUT", (570, 173), self.small, accent)
-        text("PARTICIPANT ID (same as questionnaire)", (80, 412), self.small, accent)
+        text("HOW TO PLAY", (570, 173 + right_offset), self.small, accent)
+        text("PARTICIPANT ID (same as questionnaire)", (80, 388), self.small, accent)
         for key, label in ROBOTS:
             button(self.robot_buttons[key], label, self.robot == key)
-        for key, label in LAYOUTS:
-            button(self.layout_buttons[key], label, self.layout == key)
-        text("Random seed", (570, 285))
-        text("Duration (seconds)", (800, 285))
         for key, rect in self.fields.items():
             pygame.draw.rect(screen, (55, 70, 68) if self.focus == key else (60, 60, 60), rect, border_radius=7)
             pygame.draw.rect(screen, YELLOW if self.focus == key else (100, 100, 100), rect, 2, border_radius=7)
@@ -159,16 +147,36 @@ class MainMenu:
                 pygame.draw.rect(screen, (55, 100, 130), rect.inflate(-14, -12), border_radius=3)
             text(getattr(self, key), (rect.x + 12, rect.y + 9))
         button(self.logging_button, "Logging: " + ("ON" if self.logging_enabled else "OFF"), self.logging_enabled)
-        text("Same seed = same scheduled orders.", (570, 466), self.small)
-        hint = ("No Robot + Divided is a layout preview."
-                if self.robot == "none" and self.layout == "divided"
-                else "Pauses do not count toward game duration.")
-        text(hint, (570, 491), self.small)
-        text("Select a field to replace its value. Tab switches fields.", (62, 555), self.small, DARK)
+        text("YOUR TASK", (570, 207 + right_offset), self.small, accent)
+        for y, line in (
+                (231, "Help the robot complete orders in 3 minutes."),
+                (255, "Start with the order with the least time left."),
+                (285, "Collect or return raw ingredients at left supplies."),
+                (309, "Chop tomato or potato at Prep if you wish."),
+                (333, "Use a prep tray to assemble sandwiches."),
+                (357, "Deliver ingredients or dishes via purple Handoff."),
+                (381, "The robot prepares and serves delivered food.")):
+            text(line, (570, y + right_offset), self.small)
+        text("CONTROLS", (570, 414 + right_offset), self.small, accent)
+        for y, line in (
+                (442, "WASD: move | E: pick up, put down or interact"),
+                (466, "Hold SPACE near a board: chop"),
+                (490, "P: pause | Esc: return to the main menu"),
+                (514, "M: music on / off")):
+            text(line, (570, y + right_offset), self.small)
+        text("Music: Cypis - Gdzie jest biały węgorz? (Zejście)", (570, 578 + right_offset), self.small, DARK)
+        text("AFTER PLAYING WITH ALL 3 ROBOTS:", (570, 562), self.notice_font, DARK)
+        text("COMPLETE THE FORM AND UPLOAD LOGS", (570, 586), self.notice_font, DARK)
+        text("(The logs should be in the logs folder", (570, 614), self.small, DARK)
+        text("in the same location as the game.)", (570, 634), self.small, DARK)
+        text("Enter your participant ID, select a robot, then start.", (62, 578), self.small, DARK)
         if self.error:
-            text(self.error, (62, 588), self.small, (155, 25, 20))
+            text(self.error, (62, 606), self.small, (155, 25, 20))
         else:
-            text("During play: Esc returns here. Every start creates a fresh session.", (62, 588), self.small, DARK)
+            text("During play: Esc returns here. Every start creates a fresh session.", (62, 606), self.small, DARK)
+        link_color = (20, 90, 150) if self.form_link.collidepoint(pygame.mouse.get_pos()) else (25, 65, 120)
+        text(FORM_LINK_LABEL, self.form_link.topleft, self.small, link_color)
+        pygame.draw.line(screen, link_color, self.form_link.bottomleft, self.form_link.bottomright)
         button(self.start_button, "START GAME", True)
         button(self.quit_button, "QUIT")
         pygame.display.flip()
@@ -181,7 +189,7 @@ def launch_selected(menu):
     previous_duration = C.GAME_TIME
     try:
         C.GAME_TIME = options.game_time
-        return run_game(options, menu.layout, menu_mode=True)
+        return run_game(options, FIXED_LAYOUT, menu_mode=True)
     finally:
         C.GAME_TIME = previous_duration
 
@@ -213,4 +221,8 @@ def main():
 
 
 if __name__ == "__main__":
+    import sys
+    if "--self-check" in sys.argv:
+        from build_check import run
+        raise SystemExit(run())
     main()

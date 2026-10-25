@@ -34,6 +34,15 @@ class AdaptiveTests(unittest.TestCase):
         counter = next(s for s in state.stations if s.owner == 'shared' and s.held is None)
         interact(state.player, counter, state)
 
+    def confirm_pickup(self, state, counter):
+        """Confirm delivery through the game rules, independently of AI choices."""
+        state.robot.preferences.update(state)
+        self.assertIsNone(state.robot.carrying)
+        expected = counter.held
+        interact(state.robot, counter, state)
+        self.assertEqual(state.robot.carrying, expected)
+        state.robot.preferences.update(state)
+
     def test_repeated_complete_cheese_sandwich_and_behavior_reversal(self):
         state = self.state()
         for _ in range(6):
@@ -53,8 +62,10 @@ class AdaptiveTests(unittest.TestCase):
         self.assertEqual(forecast.action, 'wait_for_handoff')
         for _ in range(8):
             counter = self.handoff(state, 'cheese')
-            state.robot.preferences.update(state)
-            counter.held = None
+            self.confirm_pickup(state, counter)
+            # Clear the received test sample using the game rules.
+            trash = next(s for s in state.stations if s.kind == 'trash' and s.owner == 'robot')
+            interact(state.robot, trash, state)
         state.player.carrying = 'bread'
         self.assertEqual(state.robot.preferences.preferred('cheese_sandwich'), 'individual')
         self.assertEqual(plan(state.robot, state, True).item, 'bread')
@@ -88,8 +99,10 @@ class AdaptiveTests(unittest.TestCase):
 
     def test_partial_preferences_reset_and_schedule_fairness(self):
         state = GameState(AdaptiveAnticipatoryRobot, seed=42, layout='divided', recipe='tomato_soup')
-        self.handoff(state, 'chopped_tomato')
+        counter = self.handoff(state, 'chopped_tomato')
         state.robot.preferences.update(state)
+        self.assertEqual(state.robot.preferences.counts, {})
+        self.confirm_pickup(state, counter)
         self.assertEqual(state.robot.preferences.preferred('tomato_soup'), 'partial')
         fresh = self.state()
         self.assertEqual(fresh.robot.preferences.counts, {})
@@ -97,6 +110,21 @@ class AdaptiveTests(unittest.TestCase):
         schedules = [GameState(cls, seed=42, layout='divided')._arrivals
                      for cls in (ReactiveRobot, AnticipatoryRobot, AdaptiveAnticipatoryRobot)]
         self.assertTrue(all(schedule == schedules[0] for schedule in schedules))
+
+    def test_withdrawn_or_unconfirmed_ingredients_do_not_train_preferences(self):
+        for removal in ('human_pickup', 'unexplained_removal'):
+            with self.subTest(removal=removal):
+                state = self.state()
+                counter = self.handoff(state, 'bread')
+                state.robot.preferences.update(state)
+                self.assertEqual(state.robot.preferences.counts, {})
+                if removal == 'human_pickup':
+                    interact(state.player, counter, state)
+                else:
+                    counter.held = None
+                state.robot.preferences.update(state)
+                self.assertEqual(state.robot.preferences.counts, {})
+                self.assertEqual(state.robot.preferences.pending, {})
 
     def test_observable_only_and_separate_logging(self):
         state = self.state()

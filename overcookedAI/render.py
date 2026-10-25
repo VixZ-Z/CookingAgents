@@ -211,8 +211,8 @@ class View:
     def help(self, target):
         s = self.screen
         lines = [
-            "WASD - move",
-            "E - interact / pick up / put down",
+            "WASD - move | M - music on/off",
+            "E - interact / pick up / put down / return to supply",
             "Hold SPACE - chop | B - robot on/off | P - pause",
             "Sandwiches: combine bread + cheese or ham on a counter",
             "Soups / mains: chop produce, combine in pot, cook, plate",

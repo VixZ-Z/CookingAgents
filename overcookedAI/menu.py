@@ -27,6 +27,10 @@ def period_at(elapsed):
     return PERIODS[min(2, max(0, int((elapsed + 1e-9) // 60)))]
 
 
+def meal_end_time(recipe):
+    return 60.0 * (PERIODS.index(RECIPES[recipe].category) + 1)
+
+
 def prepared(name):
     return "chopped_" + name if name in CHOP_REQUIRED else name
 

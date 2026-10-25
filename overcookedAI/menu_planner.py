@@ -77,7 +77,7 @@ def plan(robot, state, anticipatory=False):
         return task([s for s in state.stations if s.kind == "trash"], "trash", item, None,
                     "Clearing a dish whose order expired")
 
-    def store(recipe, handoff=False):
+    def store(recipe, handoff=False, preserve=False):
         destinations = [s for s in surfaces if s.kind == "counter" and s.held is None]
         if handoff:
             shared = [s for s in destinations if s.owner == "shared"]
@@ -89,6 +89,8 @@ def plan(robot, state, anticipatory=False):
         result = task(destinations, "put", item, recipe, "Staging " + str(item))
         if result or destinations:
             return result
+        if preserve:
+            return None
         return task([s for s in state.stations if s.kind == "trash"], "trash", item, recipe,
                     "Clearing unused supply because storage is full")
 
@@ -105,11 +107,37 @@ def plan(robot, state, anticipatory=False):
     if anticipatory and item and any(o.kind in human_finished for o in orders):
         return store(None)
 
+    # A fully supplied selected recipe can reclaim a pot occupied by an
+    # incomplete older batch. A forecast alone must not displace useful work.
+    focus = RECIPES[orders[0].kind] if anticipatory and orders else None
+    focus_items = set(map(prepared, focus.ingredients)) if focus else set()
+    focus_inventory = [s.held for s in surfaces] + [item]
+    focus_inventory += [ingredient for p in pots if set(p.contents) <= focus_items
+                        for ingredient in p.contents]
+    focus_supplied = focus is not None and all(
+        name in focus_inventory or prepared(name) in focus_inventory
+        for name in focus.ingredients)
+    if (focus_supplied and item and item != "plate"
+            and item not in focus_items and item not in focus.ingredients):
+        # Preserve recovered supply instead of immediately putting it back into
+        # the pot for another order, or discarding it when storage is full.
+        return store(orders[0].kind, preserve=True)
+
     valid_batches = [set(map(prepared, RECIPES[o.kind].ingredients)) for o in orders
                      if RECIPES[o.kind].cook_seconds]
     # Keep batches compatible with any active order, regardless of the
     # current human-intent prediction; this prevents recovery/cooking loops.
     stale = [p for p in pots if p.contents and not any(set(p.contents) <= batch for batch in valid_batches)]
+    if focus_supplied and focus.cook_seconds and not choose(
+            [p for p in pots if set(p.contents) <= focus_items]):
+        storage = choose([s for s in surfaces if s.kind == "counter" and s.held is None])
+        if storage:
+            stale += [p for p in pots if p not in stale and len(p.contents) == 1
+                      and not p.ready and not set(p.contents) <= focus_items]
+    # Use another compatible pot before disturbing an unrelated batch.
+    if choose([p for p in pots if p not in stale
+               and any(set(p.contents) <= batch for batch in valid_batches)]):
+        stale = []
     if stale and item is None:
         if any(p.ready for p in stale):
             return (task([s for s in surfaces if s.held == "plate"], "take", "plate", None,
@@ -139,7 +167,7 @@ def plan(robot, state, anticipatory=False):
             if item in names:
                 # Combine immediately when the other ingredient arrives,
                 # regardless of the order in which ingredients were supplied.
-                matching = [s for s in shared if s.held in names and s.held != item and
+                matching = [s for s in surfaces if s.held in names and s.held != item and
                             COMBOS.get(frozenset((item, s.held))) == key]
                 result = task(matching, "combine", None, key, "Assembling " + recipe.name)
                 if result:
@@ -214,6 +242,19 @@ def plan(robot, state, anticipatory=False):
             plate = task([s for s in surfaces if s.held == "plate"], "take", "plate", key, "Collecting plate")
             return plate or task([s for s in state.stations if s.kind == "plates"],
                                  "fetch", "plate", key, "Fetching plate")
+        if recipe.cook_seconds:
+            partial = [p for p in compatible if len(p.contents) == 1 and not p.ready]
+            # Keep a stable destination while walking; nearest-pot selection
+            # would swap the donor and recipient halfway between the pots.
+            destination = next((p for p in partial if choose([p])), None)
+            if destination:
+                # If both ingredients were placed in separate pots, bring the
+                # missing one to a started batch instead of waiting forever.
+                donors = [p for p in partial if p is not destination
+                          and p.contents[0] not in destination.contents]
+                result = task(donors, "take_pot", None, key, "Consolidating " + recipe.name)
+                if result:
+                    return result
         for name in names:
             ready = prepared(name)
             if any(ready in p.contents for p in compatible):
@@ -251,6 +292,11 @@ def plan(robot, state, anticipatory=False):
                     sources = [s for s in sources if s.kind == "board" or predicted_complement]
                     if not sources:
                         continue
+                if recipe.cook_seconds:
+                    targets = [p for p in compatible if not p.ready and len(p.contents) < 2
+                               and ready not in p.contents]
+                    if not choose(targets):
+                        continue  # Do not collect and restage an unusable cooking ingredient.
                 if candidate != ready and not choose([s for s in surfaces if s.kind == "board" and not s.held]):
                     continue
                 result = task(sources, "take", candidate, key, "Collecting " + candidate)

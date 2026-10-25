@@ -8,7 +8,7 @@ Robots : scripted | reactive | anticipatory_fixed_h | anticipatory_dynamic_h | a
 Layouts: scripted | shared | divided | near | far | mixed | swap
 
 Controls: WASD move, E interact, hold SPACE chop, B robot on/off,
-P pause, R restart, ESC quit.
+P pause, M music on/off, R restart, ESC quit.
 """
 import argparse
 import logging
@@ -20,6 +20,7 @@ import config as C
 from game import GameState, interaction_target
 from layouts import LAYOUT_NAMES
 from logger import RunRecorder
+from music import game_music
 from render import View
 
 
@@ -138,56 +139,63 @@ def run_game(args, layout, menu_mode=False):
     running = True
     result = "quit"
 
-    while running:
-        dt = min(clock.tick(C.FPS) / 1000.0, 0.05)
-        # Snapshot before key events: E (player_interact) changes the state here, and
-        # the recorder must see that change as part of this frame.
-        recorder.before(state)
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-                result = "quit"
-                break
-            elif (menu_mode and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1
-                  and pygame.Rect(View.MENU_BUTTON).collidepoint(event.pos)):
-                running = False
-                result = "menu"
-                break
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
+    game_music.start()
+    try:
+        while running:
+            dt = min(clock.tick(C.FPS) / 1000.0, 0.05)
+            # Snapshot before key events: E changes state within this frame.
+            recorder.before(state)
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
                     running = False
-                    result = "menu" if menu_mode else "quit"
+                    result = "quit"
                     break
-                elif event.key == pygame.K_r:
-                    recorder.finish(state, completed=state.game_over)
-                    state = create_state()
-                    recorder.start(state)
-                    recorder.before(state)
-                    paused = False
-                elif event.key == pygame.K_p and not state.game_over:
-                    paused = not paused
-                elif event.key == pygame.K_b and state.robot:
-                    state.robot.enabled = not state.robot.enabled
-                elif event.key == pygame.K_e and not state.game_over and not paused:
-                    state.player_interact()
+                elif (menu_mode and event.type == pygame.MOUSEBUTTONDOWN and event.button == 1
+                      and pygame.Rect(View.MENU_BUTTON).collidepoint(event.pos)):
+                    running = False
+                    result = "menu"
+                    break
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        running = False
+                        result = "menu" if menu_mode else "quit"
+                        break
+                    elif event.key == pygame.K_r:
+                        recorder.finish(state, completed=state.game_over)
+                        state = create_state()
+                        recorder.start(state)
+                        recorder.before(state)
+                        paused = False
+                        game_music.start()
+                    elif event.key == pygame.K_p and not state.game_over:
+                        paused = not paused
+                        game_music.set_paused(paused)
+                    elif event.key == pygame.K_m:
+                        game_music.toggle()
+                    elif event.key == pygame.K_b and state.robot:
+                        state.robot.enabled = not state.robot.enabled
+                    elif event.key == pygame.K_e and not state.game_over and not paused:
+                        state.player_interact()
 
-        if not running:
-            break
-        if not paused:
-            keys = pygame.key.get_pressed()
-            move = (keys[pygame.K_d] - keys[pygame.K_a],
-                    keys[pygame.K_s] - keys[pygame.K_w])
-            state.update(dt, move, keys[pygame.K_SPACE])
-            recorder.after(state, dt)
-            if state.game_over:
-                recorder.finish(state, completed=True)
+            if not running:
+                break
+            if not paused:
+                keys = pygame.key.get_pressed()
+                move = (keys[pygame.K_d] - keys[pygame.K_a],
+                        keys[pygame.K_s] - keys[pygame.K_w])
+                state.update(dt, move, keys[pygame.K_SPACE])
+                recorder.after(state, dt)
+                if state.game_over:
+                    game_music.stop()
+                    recorder.finish(state, completed=True)
 
-        if menu_mode:
-            view.draw(state, interaction_target(state.player, state.stations), paused, menu_mode=True)
-        else:
-            view.draw(state, interaction_target(state.player, state.stations), paused)
-
-    recorder.finish(state, completed=state.game_over)
+            if menu_mode:
+                view.draw(state, interaction_target(state.player, state.stations), paused, menu_mode=True)
+            else:
+                view.draw(state, interaction_target(state.player, state.stations), paused)
+    finally:
+        game_music.stop()
+        recorder.finish(state, completed=state.game_over)
     return result
 
 

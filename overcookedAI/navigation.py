@@ -13,6 +13,10 @@ import config as C
 
 def approach_point(station):
     """Stand on the kitchen-aisle side, within interaction range."""
+    if (station.rect.x == 50
+            and station.kind in ("crate_chicken", "crate_potato", "crate_pasta")):
+        # Approach the vertical supply stack from the open aisle on its right.
+        return pygame.Vector2(station.rect.right + 26, station.rect.centery)
     y = station.rect.bottom + 26 if station.rect.centery < 350 else station.rect.top - 26
     return pygame.Vector2(station.rect.centerx, y)
 

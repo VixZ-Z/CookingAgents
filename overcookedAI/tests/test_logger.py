@@ -3,8 +3,10 @@ import csv
 import glob
 import json
 import os
+from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 os.environ.setdefault("SDL_VIDEODRIVER", "dummy")
 os.environ.setdefault("SDL_AUDIODRIVER", "dummy")
@@ -15,6 +17,7 @@ import pygame
 from anticipatory_robot import AnticipatoryRobot
 from game import GameState, Order
 from logger import RunRecorder
+import logger
 from reactive_robot import ReactiveRobot
 
 META = {"participant": "T01", "condition": "test", "robot": "anticipatory",
@@ -30,6 +33,26 @@ class LoggerTests(unittest.TestCase):
     def setUp(self):
         self.dir = tempfile.TemporaryDirectory()
         self.addCleanup(self.dir.cleanup)
+
+    def test_default_logs_stay_beside_the_game_from_another_working_directory(self):
+        previous = Path.cwd()
+        try:
+            os.chdir(self.dir.name)
+            rec = RunRecorder(META)
+            self.assertEqual(Path(rec.log_dir), Path(logger.__file__).resolve().parent / "logs")
+        finally:
+            os.chdir(previous)
+
+    def test_frozen_game_writes_logs_beside_executable(self):
+        executable = Path(self.dir.name) / "CookingAgents.exe"
+        with patch.object(logger.sys, "frozen", True, create=True):
+            with patch.object(logger.sys, "executable", str(executable)):
+                rec = RunRecorder(META)
+                state = GameState(None, seed=0, layout="divided")
+                rec.start(state)
+                rec.finish(state, completed=False)
+        self.assertEqual(Path(rec.path).parent, executable.parent / "logs")
+        self.assertTrue((executable.parent / "logs" / "summary.csv").is_file())
 
     def run_log(self, state, seconds, human_script=None):
         rec = RunRecorder(META, self.dir.name)
