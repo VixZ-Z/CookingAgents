@@ -61,13 +61,18 @@ class Environment:
         if _dist(self.robot_cell, self.human.cell) > C.KEEP_DISTANCE_CELLS:
             self._move(toward=True)
 
-    def _step_toward(self, target: Cell) -> None:
-        """One step toward a station, never onto the person."""
-        if self.robot_cell == target:
+    def _place(self, target: Cell) -> None:
+        """Stand on a station for the whole task (fetch or chop).
+
+        If the person is already on that cell, stand in an adjacent free
+        cell so both stay visible next to the station.
+        """
+        if target != self.human.cell:
+            self.robot_cell = target
             return
-        r, c = self.robot_cell
+        r, c = target
         options = [(r + dr, c + dc)
-                   for dr, dc in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1))]
+                   for dr, dc in ((1, 0), (-1, 0), (0, 1), (0, -1))]
         options = [p for p in options
                    if 0 <= p[0] < C.GRID_SIZE and 0 <= p[1] < C.GRID_SIZE
                    and p != self.human.cell]
@@ -91,7 +96,7 @@ class Environment:
                 if s == C.NEEDS_HELP:
                     self.human.receive_help()
                 self.confirmed = False
-            self._approach()
+            self._place(C.FRIDGE_CELL)
             self.chop_left = 0
         elif action == C.CHOP:
             self.fetch_left = 0
@@ -102,7 +107,7 @@ class Environment:
             else:
                 reward = -C.ACTION_COST
             self.chop_left -= 1
-            self._step_toward(C.BOARD_CELL)
+            self._place(C.BOARD_CELL)
             if self.chop_left == 0 and self.human.food_on_board:
                 self.human.food_chopped()
         else:

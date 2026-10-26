@@ -23,7 +23,7 @@ if not args.show:
 
 import matplotlib.pyplot as plt  # noqa: E402
 from matplotlib.animation import FuncAnimation, PillowWriter  # noqa: E402
-from matplotlib.patches import Circle, FancyBboxPatch, Rectangle  # noqa: E402
+from matplotlib.patches import FancyBboxPatch  # noqa: E402
 
 import config as C  # noqa: E402
 import theme as T  # noqa: E402
@@ -87,63 +87,17 @@ def draw_think(ax, row: dict) -> None:
 
 def draw_act(ax, row: dict) -> None:
     """ACT panel: kitchen grid with Overcooked-like stations."""
-    n = C.GRID_SIZE
-    ax.set_xlim(-0.5, n - 0.5)
-    ax.set_ylim(n - 0.5, -0.5)
+    rc, rr = T.draw_kitchen(ax, row)
     ax.set_xticks([])
     ax.set_yticks([])
-    ax.set_aspect("equal")
-    ax.set_facecolor(T.FLOOR)
-    ax.add_patch(Rectangle((-0.5, -0.5), n, n, facecolor=T.FLOOR,
-                           edgecolor="none", zorder=0))
-
-    pot_on = row["true_idx"] in (C.COOKING, C.NEEDS_HELP)
-    for name, (r, c) in C.LOCATIONS.items():
-        hot = name == "Pot" and pot_on
-        face = T.ORANGE if hot else T.STATION[name]
-        box = "round,pad=0.02,rounding_size=0.12"
-        ax.add_patch(FancyBboxPatch((c - 0.45, r - 0.45), 0.9, 0.9,
-                                    boxstyle=box, facecolor=face,
-                                    edgecolor=T.STATION_EDGE, linewidth=2,
-                                    zorder=1))
-        label = name + (" ON" if hot else "")
-        ax.text(c, r - 0.28, label, ha="center", fontsize=7, color=T.WHITE,
-                weight="bold", zorder=2)
-        if name == "Board":
-            ax.add_patch(Rectangle((c - 0.28, r - 0.08), 0.56, 0.28,
-                                   facecolor=T.BOARD_TOP, zorder=2))
-            if row["food_on_board"] or row["action"] == "Chop":
-                ax.add_patch(Circle((c, r + 0.06), 0.10, facecolor=T.RED,
-                                    zorder=3))
-            if row["action"] == "Chop" and row["chop_left"]:
-                done = 1 - row["chop_left"] / C.CHOP_STEPS
-                ax.add_patch(Rectangle((c - 0.3, r + 0.28), 0.6 * done, 0.08,
-                                       facecolor=T.YELLOW, zorder=3))
-
-    for i in range(n + 1):
-        ax.axhline(i - 0.5, color=T.GRID, lw=0.8, zorder=0.5)
-        ax.axvline(i - 0.5, color=T.GRID, lw=0.8, zorder=0.5)
-
-    hr, hc = row["human_cell"]
-    rr, rc = row["robot_cell"]
-    ax.add_patch(Circle((hc, hr), 0.32, facecolor=T.HUMAN,
-                        edgecolor=T.DARK, linewidth=1.5, zorder=3))
-    ax.text(hc, hr, "P", ha="center", va="center", color=T.WHITE,
-            weight="bold", zorder=4)
-    ax.add_patch(FancyBboxPatch((rc - 0.32, rr - 0.32), 0.64, 0.64,
-                                boxstyle="round,pad=0.01,rounding_size=0.08",
-                                facecolor=T.ROBOT, edgecolor=T.DARK,
-                                linewidth=1.5, zorder=3))
-    ax.text(rc, rr, "R", ha="center", va="center", weight="bold",
-            zorder=4, color=T.DARK)
-    ax.text(rc, rr + 0.62, BUBBLE[row["action"]], ha="center", fontsize=8,
+    ax.text(rc, rr + 0.55, BUBBLE[row["action"]], ha="center", fontsize=8,
             bbox={"boxstyle": "round", "fc": T.WHITE, "ec": T.STATION_EDGE},
-            zorder=5)
+            zorder=10)
     if row["safety_fired"]:
         ax.text(2, 2.0, "SAFETY: pot on + person near\n"
                 "-> Ask first, do not Fetch",
                 ha="center", color=T.WHITE, weight="bold", fontsize=9,
-                bbox={"boxstyle": "round", "fc": T.RED}, zorder=6)
+                bbox={"boxstyle": "round", "fc": T.RED}, zorder=10)
     ax.set_title(f"ACT   step {row['step']}  |  person {row['true_state']}"
                  f"  |  {row['action']}  |  reward {row['reward']:+.1f}",
                  fontsize=11, weight="bold", loc="left", color=T.DARK)

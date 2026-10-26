@@ -26,6 +26,7 @@ LOCATIONS = {             # top row = work area, bottom row = rest area
 }
 POT_CELL = LOCATIONS["Pot"]
 BOARD_CELL = LOCATIONS["Board"]
+FRIDGE_CELL = LOCATIONS["Fridge"]
 ROBOT_START = (3, 0)      # far from the person: the robot starts unobtrusive
 NEAR_POT_DIST = 1         # "adjacent" = Chebyshev distance <= 1
 # Keep distance only backs away while closer than this; 1 cell is enough
