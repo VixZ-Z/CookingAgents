@@ -2,6 +2,7 @@
 import pygame
 
 import config as C
+from menu import RECIPES, cooked_recipe
 
 FLOOR = (211, 199, 176)
 COUNTER = (120, 82, 55)
@@ -31,6 +32,19 @@ ITEM_COLORS = {
     "salad": (120, 200, 100),
     "soup": ORANGE,
 }
+ITEM_COLORS.update({
+    "bread": (190, 140, 85), "cheese": (250, 218, 40),
+    "ham": (225, 103, 165), "tomato": (222, 44, 44),
+    "water": (40, 160, 230), "chicken": (245, 237, 214),
+    "potato": (120, 85, 40), "pasta": (245, 142, 35),
+})
+for name in ("tomato", "potato"):
+    ITEM_COLORS["chopped_" + name] = ITEM_COLORS[name]
+ITEM_LABELS = {"bread": "B", "cheese": "C", "ham": "H", "tomato": "T",
+               "water": "W", "chicken": "Ch", "potato": "Po", "pasta": "Pa"}
+STATION_COLORS = {"board": (40, 88, 65), "pot": (48, 66, 100),
+                  "plates": (66, 91, 107), "serve": (52, 99, 41),
+                  "trash": (70, 70, 70), "counter": (100, 77, 54)}
 
 
 def draw_progress(surf, rect, ratio):
@@ -48,6 +62,11 @@ def draw_carried_special(surf, item, x, y):
 
 
 def draw_item(surf, item, x, y):
+    if item in RECIPES:
+        pygame.draw.circle(surf, WHITE, (x, y), 20)
+        for offset, ingredient in zip((-7, 7), RECIPES[item].ingredients):
+            pygame.draw.circle(surf, ITEM_COLORS[ingredient], (x + offset, y), 9)
+        return
     if item in ("plated_tomato", "plated_lettuce"):
         draw_carried_special(surf, item, x, y)
         return
@@ -65,12 +84,24 @@ def draw_item(surf, item, x, y):
         pygame.draw.circle(surf, ORANGE, (x, y), 14)
         return
     pygame.draw.circle(surf, ITEM_COLORS.get(item, PINK), (x, y), 15)
+    base = item.replace("chopped_", "")
+    if base in ITEM_LABELS:
+        pygame.draw.circle(surf, DARK, (x, y), 15, 1)
+        color = WHITE if base in ("potato", "tomato") else DARK
+        label = pygame.font.SysFont("arial", 12, bold=True).render(ITEM_LABELS[base], True, color)
+        surf.blit(label, label.get_rect(center=(x, y)))
+    if item not in ITEM_COLORS:
+        # Keep unfamiliar supplies and finished dishes identifiable while carried.
+        label = pygame.font.SysFont("arial", 12, bold=True).render(
+            item.replace("chopped_", "").replace("_", " ")[:8], True, DARK)
+        surf.blit(label, (x - label.get_width() // 2, y - 6))
     if item.startswith("chopped_"):
         for ox, oy in [(-7, -4), (4, -7), (-2, 6), (7, 5)]:
             pygame.draw.circle(surf, WHITE, (x + ox, y + oy), 2)
 
 
 class View:
+    MENU_BUTTON = (850, 674, 230, 34)
     def __init__(self):
         self.screen = pygame.display.set_mode((C.WIDTH, C.HEIGHT))
         pygame.display.set_caption("Kitchen Chaos - Robot teammate")
@@ -81,7 +112,10 @@ class View:
     # -- stations -------------------------------------------------------
     def station(self, st):
         s = self.screen
-        pygame.draw.rect(s, COUNTER, st.rect, border_radius=8)
+        background = STATION_COLORS.get(st.kind, (77, 60, 43))
+        if st.owner == "shared" and st.kind == "counter":
+            background = (89, 54, 119)
+        pygame.draw.rect(s, background, st.rect, border_radius=8)
         pygame.draw.rect(s, OWNER_EDGE.get(st.owner, COUNTER_EDGE),
                          st.rect, 4, border_radius=8)
         title = self.small.render(st.label, True, WHITE)
@@ -107,13 +141,15 @@ class View:
             pygame.draw.rect(s, DARK, pot, border_radius=10)
             pygame.draw.rect(s, GRAY, pot, 3, border_radius=10)
             if st.contents:
-                n = self.small.render(str(len(st.contents)), True, WHITE)
-                s.blit(n, (pot.centerx - n.get_width() // 2,
-                           pot.centery - n.get_height() // 2))
+                for i, item in enumerate(st.contents):
+                    pygame.draw.circle(s, ITEM_COLORS.get(item, WHITE),
+                                       (pot.centerx - 8 + i * 16, pot.centery), 6)
             if st.ready:
                 pygame.draw.circle(s, ORANGE, pot.center, 14)
             if st.progress > 0 and not st.ready:
-                draw_progress(s, st.rect, min(st.progress / C.POT_TIME, 1))
+                recipe = cooked_recipe(st.contents)
+                seconds = RECIPES[recipe].cook_seconds if recipe else C.POT_TIME
+                draw_progress(s, st.rect, min(st.progress / seconds, 1))
         elif st.kind == "counter":
             if st.held:
                 draw_item(s, st.held, cx, cy + 10)
@@ -147,32 +183,39 @@ class View:
         s = self.screen
         pygame.draw.rect(s, DARK, (0, 0, C.WIDTH, 80))
         s.blit(self.font.render(f"Score: {state.score}", True, WHITE), (20, 16))
-        s.blit(self.font.render(f"Time: {max(0, int(state.game_time))}", True, WHITE),
+        elapsed = int(state.elapsed + 1e-9)
+        s.blit(self.font.render(f"{state.meal_period} — {elapsed // 60:02}:{elapsed % 60:02}", True, WHITE),
                (20, 45))
         x = 270
-        for o in sorted(state.orders, key=lambda order: order.time_left):
-            box = pygame.Rect(x, 10, 195, 60)
+        orders = sorted(state.orders, key=lambda order: order.time_left)
+        for o in orders:
+            width = min(205, 825 // max(1, len(orders)))
+            box = pygame.Rect(x, 10, width - 4, 60)
             pygame.draw.rect(s, (65, 65, 65), box, border_radius=8)
             urgent = o is state.priority_order
             pygame.draw.rect(s, YELLOW if urgent else WHITE, box, 3 if urgent else 2,
                              border_radius=8)
-            s.blit(self.small.render(o.name + (" *" if urgent else ""), True, WHITE),
-                   (box.x + 10, box.y + 8))
+            title = self.small.render(o.name + (" *" if urgent else ""), True, WHITE)
+            if title.get_width() > box.width - 12:
+                title = pygame.transform.smoothscale(title, (box.width - 12, title.get_height()))
+            s.blit(title, (box.x + 6, box.y + 4))
             remain = self.small.render(f"{int(o.time_left)}s", True,
                                        YELLOW if o.time_left < 10 else WHITE)
-            s.blit(remain, (box.right - remain.get_width() - 10, box.y + 8))
-            s.blit(self.small.render(C.INGREDIENTS[o.kind], True, WHITE),
-                   (box.x + 10, box.y + 34))
-            x += 205
+            s.blit(remain, (box.right - remain.get_width() - 6, box.y + 42))
+            ingredients = self.small.render(" + ".join(n.title() for n in C.ALL_RECIPE_INGREDIENTS[o.kind]), True, WHITE)
+            if ingredients.get_width() > box.width - 12:
+                ingredients = pygame.transform.smoothscale(ingredients, (box.width - 12, ingredients.get_height()))
+            s.blit(ingredients, (box.x + 6, box.y + 24))
+            x += width
 
     def help(self, target):
         s = self.screen
         lines = [
-            "WASD - move",
-            "E - interact / pick up / put down",
+            "WASD - move | M - music on/off",
+            "E - interact / pick up / put down / return to supply",
             "Hold SPACE - chop | B - robot on/off | P - pause",
-            "Salad: chopped tomato + chopped lettuce + plate",
-            "Soup: chopped tomato + chopped onion -> pot -> plate",
+            "Sandwiches: combine bread + cheese or ham on a counter",
+            "Soups / mains: chop produce, combine in pot, cook, plate",
         ]
         panel = pygame.Rect(12, C.HEIGHT - 128, 530, 116)
         pygame.draw.rect(s, (30, 30, 30), panel, border_radius=8)
@@ -202,7 +245,7 @@ class View:
             point = tuple(round(v) for v in intent.projected_position)
             pygame.draw.circle(self.screen, BLUE, point, 10, 2)
 
-    def draw(self, state, target, paused=False):
+    def draw(self, state, target, paused=False, menu_mode=False):
         s = self.screen
         s.fill(FLOOR)
         for x in range(0, C.WIDTH, 80):
@@ -239,11 +282,13 @@ class View:
         elif robot and state.layout.name == "divided":
             info[1] = (f"Target: {robot.task.station.label} | Recipe: {robot.recipe}"
                        if robot.task else "Deliver raw or chopped ingredients to purple counters")
-            info[2] = "Reactive: delivered items only | R: restart | ESC: exit"
+            info[2] = "Human supplies ingredients | R: restart | ESC: exit"
             if robot.transition_model.prediction:
                 info[2] = "Observe only | " + robot.transition_model.prediction.description
             if hasattr(robot, "horizon"):
                 info[2] = robot.horizon_description
+        if menu_mode:
+            info = [line.replace("ESC: exit", "ESC: main menu") for line in info]
         for i, line in enumerate(info):
             while self.small.size(line)[0] > C.WIDTH - 585:
                 line = line[:-4] + "..."
@@ -259,4 +304,10 @@ class View:
             for i, line in enumerate(lines):
                 t = self.big.render(line, True, WHITE)
                 s.blit(t, (C.WIDTH // 2 - t.get_width() // 2, 270 + 60 * i))
+        if menu_mode:
+            button = pygame.Rect(self.MENU_BUTTON)
+            pygame.draw.rect(s, DARK, button, border_radius=7)
+            pygame.draw.rect(s, OWNER_EDGE["robot"], button, 2, border_radius=7)
+            text = self.small.render("MAIN MENU  (Esc)", True, WHITE)
+            s.blit(text, text.get_rect(center=button.center))
         pygame.display.flip()

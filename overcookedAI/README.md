@@ -3,19 +3,142 @@
 The code requires **Python 3.10+**. On Windows, use Python 3.11 for the existing
 pygame requirement; pygame 2.6.1 has no Windows wheel for Python 3.14.
 
-## Current prototype: shared kitchen, salads and soups
+## Six-dish divided-kitchen experiment
+
+### Standalone Windows executable
+
+Double-click `dist/CookingAgents.exe` in the repository root. This single-file
+Windows x64 build includes Python, libraries and music. With Logging ON, sessions
+create `logs` beside the executable, independent of the working directory.
+Keep the executable in a writable folder. See [BUILDING.md](BUILDING.md) for
+rebuild instructions and verification details.
+
+### Graphical startup in PyCharm
+
+Open **`overcookedAI/launcher.py`**, right-click in the editor and choose
+**Run 'launcher'**. No script arguments are needed. Use a Python 3.10+ interpreter
+with this project's `requirements.txt` installed. Logs are saved in `logs` beside
+the game files (or beside the executable in a packaged build), regardless of the
+working directory. Do not set
+`SDL_VIDEODRIVER=dummy` in the interactive run configuration.
+
+Select Reactive, Anticipatory or Adaptive Anticipatory, enter your participant ID,
+toggle logging below that field, then click **START GAME**. The launcher always
+uses Divided Kitchen, seed 42 and 180 active seconds; these settings are not
+editable in the menu. The right panel explains the task, ingredient preparation,
+handoff counters and controls. Defaults are Reactive and logging enabled. **MAIN MENU** or
+**Esc** returns from a running or finished game. Every new start and R restart
+creates fresh robot state, including adaptive preferences. Closing the window exits.
+
+After playing with all three robot types, use **Open questionnaire and upload logs**
+below the menu panels. It opens the study form in your default browser. Complete
+the questionnaire using the same Participant ID and upload the files from `logs`
+beside the game. Uploading is manual; clicking the link does not send game data.
+
+Music starts automatically during play and loops. Press **M** to turn it off/on;
+your choice is retained between sessions while the application stays open.
+Pausing with **P** also pauses music, and music stops on the end screen or when
+returning to the menu. The bundled track is `assets/music/background.mp3`, loaded
+relative to the game files. If audio is unavailable, gameplay continues silently.
+
+Adaptive Anticipatory adds session-local, decaying handoff-style frequencies to
+the existing anticipatory planner. It distinguishes individual ingredients,
+prepared ingredients and completed dishes. Ingredient placements are provisional
+until the robot actually picks them up; human withdrawals and unexplained
+removals do not train these preferences. After repeated completed-sandwich
+handoffs it prepares to receive the finished dish; recent ingredient handoffs can
+reverse that expectation. Current visible completed dishes override predictions
+for both anticipatory variants. Standard Anticipatory retains its existing action
+prediction without this collaboration-preference model.
+
+Shared Kitchen, No Robot and fixed/dynamic horizon robots remain available through
+the existing CLI for compatibility. Adaptive Anticipatory's CLI identifier is
+`adaptive_anticipatory` and requires Divided Kitchen. GUI logs use the entered
+participant ID (default `P001`). CLI runs retain their configuration options.
+
+`menu.py` contains recipe/schedule definitions; **`launcher.py` is the graphical
+entry point**. `main.py` remains the existing CLI entry point for automated runs.
+
+### Command-line startup
+
+Run from this folder with Python 3.10+ and `requirements.txt` installed:
 
 ```powershell
-# From this folder, activate the environment created with Python 3.11:
-.\.venv\Scripts\Activate.ps1
-python -m pip install -r requirements.txt
-python main.py --robot anticipatory --seed 0
+python main.py --robot reactive --layout divided --seed 42 --participant P01 --condition reactive
+python main.py --robot anticipatory --layout divided --seed 42 --participant P01 --condition anticipatory
+python main.py --robot adaptive_anticipatory --layout divided --seed 42 --participant P01 --condition adaptive_anticipatory
 ```
 
-This selects `shared` (the original kitchen geometry, all equipment accessible
-to both teammates) and mixed salad/soup orders. Both recipes appear in the initial
-orders. The active order with the least remaining time has priority and is shown
-first with a yellow border and an asterisk. To try the collaboration:
+Both conditions use the same layout, preparation rules and seeded arrivals. Sessions
+last 180 active seconds; P pauses the game clock. Breakfast is 0–60 seconds, lunch
+60–120, and dinner 120–180. New orders select the current category with probability
+80%, each alternative with 10%, then either dish equally. Scheduled arrivals from
+already finished meal categories are skipped. At 60 seconds breakfast orders are
+cancelled immediately; at 120 seconds lunch orders are cancelled; dinner orders
+are cleared at 180 seconds. The current yellow priority order at each boundary
+is exempt from that cleanup, so it can still be completed. Its normal timer and
+expiry penalty remain active. Orders for future meals may remain visible. These
+meal-end cancellations have no score penalty and are logged as `order_cancelled`
+with reason `meal_end`; ordinary timer expiry still incurs its usual penalty.
+
+| Period | Dish | Ingredients | Preparation |
+| --- | --- | --- | --- |
+| Breakfast | Cheese Sandwich | Bread + Cheese | Assemble on a counter |
+| Breakfast | Ham Sandwich | Bread + Ham | Assemble on a counter |
+| Lunch | Tomato Soup | Tomato + Water | Chop tomato; cook 2 seconds; plate |
+| Lunch | Chicken Soup | Chicken + Water | Cook 3 seconds; plate |
+| Dinner | Chicken with Potatoes | Chicken + Potato | Chop potato; cook 4 seconds; plate |
+| Dinner | Pasta with Tomatoes | Pasta + Tomato | Chop tomato; cook 5 seconds; plate |
+
+Use E to collect, deposit, assemble, plate and serve; hold SPACE at a board to chop.
+To return a raw ingredient, approach its matching supply and press E again
+(for example, return tomato to Tomato). Other ingredients, chopped items and
+finished dishes are not accepted by that supply. Returns free your hands without
+changing the score and are logged as `put` at the supply, not as trash or handoffs.
+Deliver ingredients through either purple handoff counter. There is exactly one
+human-owned supply per ingredient in both kitchens. Robots cannot collect from
+crates. The human can chop tomato/potato before delivery, or deliver them raw for
+the robot to process. Divided Kitchen separates human preparation from robot
+processing, cooking, assembly and serving. Shared Kitchen keeps the workspace
+open and allows the human to use the processing stations too.
+
+Reactive processes current delivered supply without predicting human intentions.
+Anticipatory uses visible carried items, movement and the existing intention model
+to predict a recipe, stage a plate, approach the likely handoff and process a
+supplied complementary ingredient before the full recipe has arrived. It replans
+when the human changes direction or recipes, limits duplicate staging and recovers
+incompatible pot contents. Neither robot reads future orders.
+
+Ingredient colors and short labels are consistent across crates, carried items,
+counters and pot contents. Processing stations use separate colors; handoffs are
+purple. Each layout has two pots, one plate supply and one serving station, plus separate
+human preparation and robot processing boards.
+
+Robots prefer a compatible started batch and can use the other pot when one
+contains an unrelated ingredient. An accessible compatible pot takes precedence
+over clearing the unrelated batch. Ingredients split across two compatible pots
+can be consolidated into one batch. The current executable includes both pots
+and meal-end cleanup with preservation of the yellow priority order.
+
+There are three orders at time zero and one every 15 active seconds through 165.
+Arrivals are generated before play with their own seeded random generator. The
+previous four-order cap does not apply to this schedule: skipping arrivals when
+busy would change experimental exposure. The robot planners never read the
+schedule. Use the same seed in paired conditions; do not mix recipe filters or
+game-time overrides between trials. `--recipe cheese_sandwich` and the other recipe
+IDs in `menu.py` are available for isolated practice.
+
+All changes are local. See `IMPLEMENTATION.md` for verification results, changed
+files and commands for the bundled Python runtime on this computer.
+
+## Archived prototype behavior
+
+The sections below describe the historical salad/tomato-onion prototype, not the
+active six-recipe game. Obsolete recipe CLI filters are disabled. Historical
+regression fixtures explicitly use `GameState(..., legacy_menu=True)` to preserve
+old mechanics and geometry; this is not a launcher option. Normal sessions use
+the six recipes above. The `scripted` CLI robot name now uses delivered-supply
+reactive execution for the active menu.
 
 The robot starts after **0.5 seconds of game time**, even if you do not move.
 With no history it assumes you will prepare tomato and starts lettuce for salad
@@ -317,5 +440,5 @@ python main.py                                   # scripted robot
 python main.py --robot none --layout far         # preview a layout
 ```
 Layouts: `scripted | shared | divided | near | far | mixed | swap`.
-Controls: WASD move, E interact, hold SPACE chop, B robot on/off, P pause,
+Controls: WASD move, E interact, hold SPACE chop, B robot on/off, P pause, M music on/off,
 R restart, ESC quit.

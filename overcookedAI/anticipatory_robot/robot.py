@@ -1,7 +1,8 @@
-"""Shared-kitchen teammate: anticipate complementary work for the earliest deadline.
+"""Anticipatory teammate for shared and divided kitchens.
 
 Observable goals override learned starter frequencies and action transitions.
-No higher-order sequences, forgetting or h yet. Inactivity triggers takeover.
+The six-dish planner reuses this intent model and shared recipe execution;
+legacy shared-kitchen recipes retain their original inactivity takeover policy.
 """
 from __future__ import annotations
 
@@ -25,8 +26,8 @@ class AnticipatoryRobot(RobotBase):
     speed = C.ROBOT_SPEED
 
     def __init__(self, state):
-        if state.layout.name not in ("shared", "scripted"):
-            raise ValueError("Anticipatory prototype needs a shared kitchen")
+        if state.layout.name not in ("shared", "scripted", "divided"):
+            raise ValueError("Anticipatory robot requires shared, scripted or divided layout")
         super().__init__(*state.layout.robot_start)
         self.model = HumanIntentModel()
         self.transition_model = self.model.transitions
@@ -75,7 +76,7 @@ class AnticipatoryRobot(RobotBase):
 
     @property
     def ingredients(self):
-        return C.RECIPE_INGREDIENTS.get(self.recipe, ())
+        return C.ALL_RECIPE_INGREDIENTS.get(self.recipe, ())
 
     @staticmethod
     def _human_state(state):
@@ -178,6 +179,8 @@ class AnticipatoryRobot(RobotBase):
 
     @property
     def cooperation_description(self):
+        if getattr(self, "_menu_mode", False):
+            return self.intent.description if self.intent else "Waiting for observable human work"
         if self.autonomous:
             return (f"Human idle: {self.human_idle_seconds:.1f}s | completing {self.recipe}"
                     if self.recipe else "Human idle | waiting for orders")
@@ -480,6 +483,11 @@ class AnticipatoryRobot(RobotBase):
 
     def update_ai(self, dt, state):
         """Update behaviour and publish diagnostics only when the decision changes."""
+        from menu import RECIPES
+        if not state.legacy_menu:
+            from menu_planner import update_anticipatory
+            update_anticipatory(self, state, dt)
+            return
         self._events = []
         self._navigation_requested = False
         self._attempted_task = None

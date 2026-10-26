@@ -21,7 +21,7 @@ def place(actor, center):
 
 class InactivityTests(unittest.TestCase):
     def setUp(self):
-        self.state = GameState(AnticipatoryRobot, seed=0, layout="shared")
+        self.state = GameState(AnticipatoryRobot, seed=0, layout="shared", legacy_menu=True)
         self.state.orders = [Order("salad", 90)]
         self.state.order_timer = -1000
         place(self.state.player, (80, 350))
@@ -170,3 +170,4 @@ class InactivityTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

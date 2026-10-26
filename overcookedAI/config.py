@@ -30,7 +30,7 @@ POT_TIME = 0.5
 INITIAL_ORDERS = 3
 MAX_ORDERS = 4
 ORDER_TTL = (65, 90)                     # seconds, random range
-ORDER_INTERVAL = 15
+ORDER_INTERVAL = 10
 SCORE_DELIVERY = 100
 SCORE_EXPIRE_PENALTY = 20
 
@@ -58,7 +58,11 @@ STATIONS = [
 ]
 ROBOT_OWNED_INDEX = 1                    # index among boards / pots / counters
 
-INGREDIENTS = {"salad": "Tomato + Lettuce", "soup": "Tomato + Onion"}
-RECIPE_INGREDIENTS = {"salad": ("tomato", "lettuce"),
-                      "soup": ("tomato", "onion")}
-ORDER_KINDS = ["salad", "soup"]
+from menu import RECIPES
+RECIPE_INGREDIENTS = {key: r.ingredients for key, r in RECIPES.items()}
+INGREDIENTS = {key: " + ".join(n.title() for n in r.ingredients)
+               for key, r in RECIPES.items()}
+ORDER_KINDS = list(RECIPES)
+# Historical metadata is confined to archive/regression support, not playable options.
+ALL_RECIPE_INGREDIENTS = {"salad": ("tomato", "lettuce"), "soup": ("tomato", "onion"),
+                          **RECIPE_INGREDIENTS}

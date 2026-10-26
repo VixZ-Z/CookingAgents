@@ -19,7 +19,7 @@ def place(actor, position):
 
 class UnexpectedStoppingTests(unittest.TestCase):
     def setUp(self):
-        self.state = GameState(AnticipatoryRobot, seed=0, layout="shared", recipe="salad")
+        self.state = GameState(AnticipatoryRobot, seed=0, layout="shared", recipe="salad", legacy_menu=True)
         self.state.game_time -= 1
         self.state.orders = [Order("salad", 90)]
         self.robot = self.state.robot

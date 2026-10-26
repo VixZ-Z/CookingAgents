@@ -10,7 +10,7 @@ from navigation import Navigator
 
 class ReactiveLayoutTests(unittest.TestCase):
     def setUp(self):
-        self.state = GameState(seed=0, layout="divided")
+        self.state = GameState(seed=0, layout="divided", legacy_menu=True)
 
     def test_divider_blocks_crossing_at_every_height(self):
         obstacles = self.state.walls + [s.rect for s in self.state.stations]
@@ -57,3 +57,4 @@ class ReactiveLayoutTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

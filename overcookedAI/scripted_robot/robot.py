@@ -14,6 +14,14 @@ from robot_base import RobotBase
 
 
 class ScriptedRobot(RobotBase):
+    def __new__(cls, state):
+        # The CLI's historical name remains usable, but current experiments
+        # must respect human-only supplies and the six active recipes.
+        if not state.legacy_menu:
+            from reactive_robot import ReactiveRobot
+            return ReactiveRobot(state)
+        return super().__new__(cls)
+
     def __init__(self, state):
         super().__init__(*state.layout.robot_start)
         self.steps = []

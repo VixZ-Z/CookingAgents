@@ -13,8 +13,8 @@ from game import GameState, Order
 class StartupTests(unittest.TestCase):
     def test_stationary_human_robot_starts_at_half_second_for_both_recipes(self):
         for recipe, complement in (("salad", "lettuce"), ("soup", "onion")):
-            with self.subTest(recipe=recipe):
-                state = GameState(AnticipatoryRobot, seed=0, layout="shared", recipe=recipe)
+            with self.subTest(recipe=recipe, legacy_menu=True):
+                state = GameState(AnticipatoryRobot, seed=0, layout="shared", recipe=recipe, legacy_menu=True)
                 before = state.robot.rect.copy()
                 state.update(0.49, (0, 0), False)
                 self.assertEqual(state.robot.rect, before)
@@ -28,7 +28,7 @@ class StartupTests(unittest.TestCase):
                 self.assertIsNone(state.robot.model.predict_start(recipe))
 
     def test_human_choice_during_delay_overrides_initial_assumption(self):
-        state = GameState(AnticipatoryRobot, seed=0, layout="shared", recipe="soup")
+        state = GameState(AnticipatoryRobot, seed=0, layout="shared", recipe="soup", legacy_menu=True)
         before = state.robot.rect.copy()
         state.player.carrying = "onion"
         state.update(0.49, (0, 0), False)
@@ -38,7 +38,7 @@ class StartupTests(unittest.TestCase):
         self.assertEqual(state.robot.contribution_source, "observed")
 
     def test_new_priority_does_not_repeat_the_startup_delay(self):
-        state = GameState(AnticipatoryRobot, seed=0, layout="shared")
+        state = GameState(AnticipatoryRobot, seed=0, layout="shared", legacy_menu=True)
         state.orders = [Order("salad", 30), Order("soup", 80)]
         for _ in range(30):
             state.update(1 / 60, (0, 0), False)
@@ -50,8 +50,8 @@ class StartupTests(unittest.TestCase):
 
     def test_default_and_idle_takeover_do_not_learn_from_robot_actions(self):
         for recipe in ("salad", "soup"):
-            with self.subTest(recipe=recipe):
-                state = GameState(AnticipatoryRobot, seed=0, layout="shared", recipe=recipe)
+            with self.subTest(recipe=recipe, legacy_menu=True):
+                state = GameState(AnticipatoryRobot, seed=0, layout="shared", recipe=recipe, legacy_menu=True)
                 for _ in range(1350):
                     state.update(1 / 30, (0, 0), False)
                     self.assertFalse(state.robot.rect.colliderect(state.player.rect))
@@ -64,17 +64,17 @@ class StartupTests(unittest.TestCase):
                 self.assertIsNone(state.robot.model.predict_start(recipe))
 
     def test_no_orders_means_no_ingredient_fetch(self):
-        state = GameState(AnticipatoryRobot, seed=0, layout="shared")
+        state = GameState(AnticipatoryRobot, seed=0, layout="shared", legacy_menu=True)
         state.orders.clear()
         state.update(0.5, (0, 0), False)
         self.assertIsNone(state.robot.task)
         self.assertIsNone(state.robot.human_ingredient)
 
     def test_restart_reapplies_the_delay_and_initial_assumption(self):
-        state = GameState(AnticipatoryRobot, seed=0, layout="shared", recipe="soup")
+        state = GameState(AnticipatoryRobot, seed=0, layout="shared", recipe="soup", legacy_menu=True)
         state.update(0.5, (0, 0), False)
         self.assertEqual(state.robot.task.item, "onion")
-        restarted = GameState(AnticipatoryRobot, seed=0, layout="shared", recipe="soup")
+        restarted = GameState(AnticipatoryRobot, seed=0, layout="shared", recipe="soup", legacy_menu=True)
         before = restarted.robot.rect.copy()
         restarted.update(0.49, (0, 0), False)
         self.assertEqual(restarted.robot.rect, before)
@@ -85,3 +85,4 @@ class StartupTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

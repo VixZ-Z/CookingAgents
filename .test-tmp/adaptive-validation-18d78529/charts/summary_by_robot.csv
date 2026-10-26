@@ -1,0 +1,6 @@
+robot,games,score_mean,score_sd,serves_per_min_mean,serves_per_min_sd,order_time_mean,order_time_sd,expired_mean,expired_sd,handoffs_mean,handoffs_sd,robot_ready_share_mean,robot_ready_share_sd,arrival_minus_put_mean,arrival_minus_put_sd,dwell_mean_mean,dwell_mean_sd,h_mae_mean,h_mae_sd,h_bias_mean,h_bias_sd,robot_idle_s_mean,robot_idle_s_sd,human_still_s_mean,human_still_s_sd
+reactive,6,151.833,2.639,4.665,0.955,13.322,2.73,0.0,0.0,1.667,0.516,0.0,0.0,3.322,1.154,3.444,1.142,,,,,5.262,2.421,7.905,3.168
+anticipatory,6,152.333,1.506,4.783,0.57,12.7,1.579,0.0,0.0,1.667,0.516,0.0,0.0,2.489,1.221,2.711,1.314,,,,,1.307,0.8,7.283,2.79
+adaptive_anticipatory,6,152.333,1.506,4.783,0.57,12.7,1.579,0.0,0.0,1.667,0.516,0.0,0.0,2.489,1.221,2.711,1.314,,,,,1.307,0.8,7.283,2.79
+anticipatory_fixed_h,6,151.667,2.251,4.584,0.728,13.383,2.244,0.0,0.0,1.667,0.516,0.0,0.0,3.114,0.662,3.395,0.709,2.289,0.472,2.289,0.472,2.007,1.364,7.968,3.199
+anticipatory_dynamic_h,6,152.0,2.608,4.782,0.97,12.994,2.672,0.0,0.0,1.667,0.516,0.0,0.0,2.783,1.094,3.061,1.174,0.113,0.024,0.112,0.025,2.14,1.188,7.58,3.161

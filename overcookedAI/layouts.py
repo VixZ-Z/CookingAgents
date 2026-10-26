@@ -105,5 +105,37 @@ LAYOUTS: dict[str, Layout] = {
 LAYOUT_NAMES = list(LAYOUTS)
 
 
-def get_layout(name: str) -> Layout:
-    return LAYOUTS[name]
+def get_layout(name: str, legacy: bool = False) -> Layout:
+    return LAYOUTS[name] if legacy else experiment_layout(name)
+
+
+def experiment_layout(name):
+    """One human-owned supply per ingredient; shared processing or divided zones."""
+    base = LAYOUTS[name]
+    names = ("bread", "cheese", "ham", "tomato", "water", "chicken", "potato", "pasta")
+    slots = [(50, 120), (142, 120), (234, 120), (326, 120), (418, 120),
+             (50, 250), (50, 318), (50, 386)]
+    supplies = [(x, y, "crate_" + ingredient, ingredient.title(), HUMAN)
+                for ingredient, (x, y) in zip(names, slots)]
+    divided = name == "divided"
+    processor = ROBOT if divided else None
+    stations = supplies + [
+        (50, 510, "board", "Prep", HUMAN),
+        (142, 510, "counter", "Prep tray", HUMAN),
+        (418, 510, "trash", "Trash", HUMAN)]
+    stations += [
+        (650, 120, "board", "Chop", processor),
+        (742, 120, "pot", "Cook", processor),
+        (926, 120, "pot", "Cook 2", processor),
+        (834, 120, "plates", "Plates", processor),
+        (1018, 120, "serve", "Serve", processor),
+        (650, 510, "counter", "Stage", processor),
+        (742, 510, "counter", "Assemble", processor),
+        (1018, 510, "trash", "Trash", processor),
+        (518, 250, "counter", "Handoff", SHARED),
+        (518, 400, "counter", "Handoff", SHARED)]
+    if not divided:
+        stations = [s for s in stations if not (s[2] == "trash" and s[4] == HUMAN)]
+    return Layout(name, "Human supplies; robot processes and serves", stations,
+                  (300, 330), (800, 330), walls=base.walls if divided else ())
+

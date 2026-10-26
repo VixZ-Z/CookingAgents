@@ -99,7 +99,7 @@ class ExperimentLoggingTests(unittest.TestCase):
         self.assertEqual(list(summary[0]), SUMMARY_FIELDS)
 
     def test_handoff_dwell_and_robot_arrival_are_paired(self):
-        state = GameState(ReactiveRobot, seed=0, layout="divided", recipe="salad")
+        state = GameState(ReactiveRobot, seed=0, layout="divided", recipe="salad", legacy_menu=True)
         state.orders = [Order("salad", 150)]
         state.order_timer = -1000
         counters = [s for s in state.stations if s.owner == "shared"]
