@@ -33,6 +33,7 @@ def metrics(rows: list) -> dict:
         "latency": sum(needs) / onsets if onsets else np.nan,
         "intrusions": sum(a and not n for a, n in zip(acted, needs)),
         "asks": sum(r["action_idx"] == C.ASK for r in rows),
+        "chops": sum(r["action_idx"] == C.CHOP for r in rows),
     }
 
 

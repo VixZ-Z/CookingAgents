@@ -16,7 +16,8 @@ class Human:
         self.t = 0
         self.state = C.COOKING
         self.fatigue = 0.0
-        self.zone = C.ZONES.index("Counter")
+        self.zone = C.ZONES.index("Board")
+        self.food_on_board = False    # ingredient left for the robot to cut
 
     @property
     def cell(self) -> tuple:
@@ -28,7 +29,9 @@ class Human:
         if self.state == C.NEEDS_HELP:
             return C.T_NEEDS_HELP
         if self.state == C.RESTING:
-            return C.T_RESTING
+            if self.food_on_board:
+                return C.T_RESTING
+            return C.T_RESTING_DONE
         to_help = C.T_BASE_COOKING[1] + C.FATIGUE_TO_HELP * self.fatigue
         to_rest = C.T_BASE_COOKING[2] + C.FATIGUE_TO_REST * self.fatigue
         return np.array([1 - to_help - to_rest, to_help, to_rest])
@@ -46,6 +49,13 @@ class Human:
         """The robot fetched what was needed: back to cooking, less tired."""
         self.state = C.COOKING
         self.fatigue = max(0.0, self.fatigue - C.FATIGUE_RELIEF)
+
+    def food_chopped(self) -> None:
+        """Robot finished the ingredient they left on the board."""
+        self.food_on_board = False
+        self.fatigue = max(0.0, self.fatigue - C.FATIGUE_RELIEF)
+        if self.state == C.NEEDS_HELP:
+            self.state = C.COOKING
 
     def _observe(self) -> Observation:
         """Sample a noisy observation of the current state."""
@@ -67,8 +77,18 @@ class Human:
         old_state = self.state
         self.state = int(self.rng.choice(3, p=self._transition_row()))
         self._update_fatigue()
-        moved = self.rng.random() < C.ZONE_MOVE_PROB
-        if self.state != old_state or moved:
+        # Sitting down means the chop is unfinished: leave it and go rest.
+        if self.state == C.RESTING and old_state != C.RESTING:
+            self.food_on_board = True
+            self.zone = C.ZONES.index("Chair")
+        elif (self.state == C.COOKING and not self.food_on_board
+              and self.rng.random() < C.LEAVE_FOOD_PROB):
+            self.food_on_board = True
             self.zone = int(self.rng.choice(5, p=C.ZONE_PROBS[self.state]))
+        else:
+            moved = self.rng.random() < C.ZONE_MOVE_PROB
+            if self.state != old_state or moved:
+                self.zone = int(self.rng.choice(
+                    5, p=C.ZONE_PROBS[self.state]))
         self.t += 1
         return self.state, self._observe()

@@ -14,7 +14,7 @@ from robot import Robot
 LOG_FILE = "log.csv"
 FIELDS = ["step", "true_state", "observation", "belief_cooking",
           "belief_needshelp", "belief_resting", "action", "reward",
-          "safety_fired"]
+          "safety_fired", "food_on_board"]
 
 
 def describe(obs) -> str:
@@ -46,6 +46,8 @@ def run_episode(seed: int = C.SEED, adaptive: bool = True,
             "action": C.ACTIONS[action],
             "reward": round(reward, 2),
             "safety_fired": int(fired),
+            "food_on_board": int(human.food_on_board),
+            "chop_left": env.chop_left,
             # extras for visualize.py / compare.py (not written to the CSV)
             "true_idx": state,
             "action_idx": action,
@@ -67,13 +69,14 @@ def main() -> None:
     rows = run_episode()
     write_log(rows)
     print(f"{'step':>4} {'true':<10} {'belief (C, H, R)':<20} "
-          f"{'action':<14} {'reward':>6}  safety")
+          f"{'action':<14} {'reward':>6}  safety food")
     for r in rows:
         belief = (f"{r['belief_cooking']:.2f} {r['belief_needshelp']:.2f} "
                   f"{r['belief_resting']:.2f}")
         mark = "FIRED" if r["safety_fired"] else ""
+        food = "food" if r["food_on_board"] else ""
         print(f"{r['step']:>4} {r['true_state']:<10} {belief:<20} "
-              f"{r['action']:<14} {r['reward']:>6.1f}  {mark}")
+              f"{r['action']:<14} {r['reward']:>6.1f}  {mark:<5} {food}")
         if r["step"] == C.ROUTINE_CHANGE_STEP - 1:
             print("---- routine change: person now tires faster ----")
     total = sum(r["reward"] for r in rows)

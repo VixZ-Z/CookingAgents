@@ -5,9 +5,11 @@ import config as C
 
 
 def build_transitions() -> np.ndarray:
-    """P[a, s, s'] used by the MDP: same dynamics except Fetch helps."""
+    """P[a, s, s'] used by the MDP: Fetch and Chop change the outcome."""
     P = np.stack([C.T_PRIOR.copy() for _ in C.ACTIONS])
     P[C.FETCH, C.NEEDS_HELP] = C.T_FETCH_FROM_NEEDS_HELP
+    P[C.CHOP, C.RESTING] = C.T_CHOP_FROM_RESTING
+    P[C.CHOP, C.NEEDS_HELP] = C.T_FETCH_FROM_NEEDS_HELP
     return P
 
 
@@ -32,14 +34,28 @@ class Policy:
         self.safety_fired = False
 
     def choose(self, belief: np.ndarray, context: dict) -> int:
-        """Pick argmax_a sum_s b(s) Q(s, a), then apply the safety rule."""
-        action = int(np.argmax(belief @ self.Q))
+        """Pick argmax_a sum_s b(s) Q(s, a), then apply the safety rule.
+
+        Food on the board is observed directly (like the pot). Chopping it
+        gets a bonus so the robot does the job instead of only asking or
+        keeping its distance. With an empty board, Chop is not available.
+        """
+        scores = belief @ self.Q
+        if context["food_on_board"]:
+            scores = scores.copy()
+            scores[C.CHOP] += C.FOOD_CHOP_BONUS
+        else:
+            scores = scores.copy()
+            scores[C.CHOP] = -1e9
+        action = int(np.argmax(scores))
         return self._safety(action, context)
 
     def choose_from_obs(self, obs, context: dict) -> int:
         """Baseline: react to the raw observation only (no belief)."""
         action = C.WAIT
-        if obs is not None:
+        if context["food_on_board"]:
+            action = C.CHOP
+        elif obs is not None:
             if obs["verbal"] or (obs["gesture"] and obs["idle"]):
                 action = C.FETCH
             elif obs["idle"] and obs["zone"] == C.ZONES.index("Chair"):
@@ -49,7 +65,7 @@ class Policy:
     def _safety(self, action: int, context: dict) -> int:
         """Hard rule, outside the learned policy.
 
-        Never fetch autonomously while the stove is on and the person is
+        Never fetch autonomously while the pot is on and the person is
         next to it, unless the person has confirmed they want help: ask.
         """
         self.safety_fired = False
