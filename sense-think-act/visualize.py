@@ -35,10 +35,9 @@ def main() -> None:
     steps = [r["step"] for r in rows]
     belief_keys = ["belief_cooking", "belief_needshelp", "belief_resting"]
 
-    # Prefer a Fetch frame; else first Ask; else first step.
-    shown = next((r for r in rows if r["action"] == "Chop"), None)
-    if shown is None:
-        shown = next((r for r in rows if r["action"] == "Fetch"), rows[0])
+    # Show the safety rule if it fired, else the first Fetch, else step 0.
+    shown = next((r for r in rows if r["safety_fired"]),
+                 next((r for r in rows if r["action"] == "Fetch"), rows[0]))
 
     fig = plt.figure(figsize=(11, 8), facecolor=T.FLOOR)
     ax1 = fig.add_subplot(2, 1, 1)

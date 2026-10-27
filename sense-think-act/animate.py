@@ -2,7 +2,7 @@
 
     python animate.py              # saves animation.gif
     python animate.py --show       # opens a live window instead
-    python animate.py --frame 34   # saves frame_34.png (one still frame)
+    python animate.py --frame 41   # saves frame_41.png (one still frame)
 
 Layout (three labelled phases):
   SENSE  - noisy observation the robot just received
@@ -16,7 +16,9 @@ import matplotlib
 parser = argparse.ArgumentParser()
 parser.add_argument("--show", action="store_true", help="live window")
 parser.add_argument("--frame", type=int, help="save one frame as PNG")
-parser.add_argument("--fps", type=int, default=3)
+parser.add_argument("--fps", type=float, default=1.0,
+                    help="frames (time-steps) per second; 1 leaves time "
+                         "to read every panel")
 args = parser.parse_args()
 if not args.show:
     matplotlib.use("Agg")  # no window needed
@@ -31,7 +33,6 @@ from main import run_episode  # noqa: E402
 
 BUBBLE = {
     "Wait": "...",
-    "Keep distance": "(giving space)",
     "Ask": "Do you need help?",
     "Fetch": "Fetching it for you!",
     "Chop": "Chopping that for you!",
@@ -42,9 +43,13 @@ BELIEF_KEYS = ["belief_cooking", "belief_needshelp", "belief_resting"]
 def _think_reason(row: dict) -> str:
     """One-line explanation of how the belief led to the action."""
     peak = C.STATES[int(max(range(3), key=lambda i: row[BELIEF_KEYS[i]]))]
+    if row["continuing"]:
+        return f"intention: finishing the {row['action']} already started"
     if row["safety_fired"]:
         return (f"belief peaks at {peak}, but SAFETY: pot on + person "
                 "near -> Ask first (no autonomous Fetch)")
+    if row["confirmed"]:
+        return "the person said yes -> Fetch"
     if row["action"] == "Chop":
         return f"food left on the board + belief {peak} -> Chop"
     return f"belief peaks at {peak} -> choose {row['action']}"
@@ -151,7 +156,7 @@ def main() -> None:
         print(f"Saved {out}")
     elif args.show:
         anim = FuncAnimation(fig, draw, frames=len(rows),
-                             interval=1000 // args.fps, repeat=False)
+                             interval=int(1000 / args.fps), repeat=False)
         plt.show()
         del anim
     else:

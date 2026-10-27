@@ -52,8 +52,11 @@ def agent_xy(cell: tuple, other: tuple | None,
     return x, y
 
 
-def draw_kitchen(ax, row: dict) -> None:
-    """Floor, stations (top of cell), then person and robot on top."""
+def draw_kitchen(ax, row: dict) -> tuple:
+    """Floor, stations (top of cell), then person and robot on top.
+
+    Returns the robot's plot position, so callers can add a speech bubble.
+    """
     n = C.GRID_SIZE
     ax.set_xlim(-0.5, n - 0.5)
     ax.set_ylim(n - 0.5, -0.5)
@@ -67,7 +70,7 @@ def draw_kitchen(ax, row: dict) -> None:
         ax.axhline(i - 0.5, color=GRID, lw=0.8, zorder=0.5)
         ax.axvline(i - 0.5, color=GRID, lw=0.8, zorder=0.5)
 
-    pot_on = row["true_idx"] in (C.COOKING, C.NEEDS_HELP)
+    pot_on = row["pot_on"]
     robot_cell = tuple(row["robot_cell"])
     for name, (r, c) in C.LOCATIONS.items():
         hot = name == "Pot" and pot_on
@@ -84,11 +87,11 @@ def draw_kitchen(ax, row: dict) -> None:
         if name == "Board":
             ax.add_patch(Rectangle((c - 0.22, r - 0.18), 0.44, 0.12,
                                    facecolor=BOARD_TOP, zorder=2))
-            if row.get("food_on_board") or row["action"] == "Chop":
+            if row["food_on_board"] or row["action"] == "Chop":
                 ax.add_patch(Circle((c + 0.22, r - 0.12), 0.07,
                                     facecolor=RED, zorder=3))
-            if row["action"] == "Chop" and row.get("chop_left", 0):
-                done = 1 - row["chop_left"] / C.CHOP_STEPS
+            if row["action"] == "Chop" and row["task_left"]:
+                done = 1 - row["task_left"] / C.DURATION[C.CHOP]
                 ax.add_patch(Rectangle((c - 0.3, r - 0.02), 0.6 * done, 0.06,
                                        facecolor=YELLOW, zorder=3))
         # Highlight the station the robot is currently using.
