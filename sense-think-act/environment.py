@@ -1,75 +1,96 @@
-"""ACT side: grid, robot position, action effects and reward."""
+"""The kitchen world: robot sensors (sense) and action effects (act)."""
 import config as C
-from human import Human
+from human import Human, Observation
 
 Cell = tuple
+ALL_CELLS = [(r, c) for r in range(C.GRID_SIZE) for c in range(C.GRID_SIZE)]
 
 
-def _dist(a: Cell, b: Cell) -> int:
-    """Chebyshev distance between two cells."""
+def dist(a: Cell, b: Cell) -> int:
+    """Chebyshev distance: 1 means the two cells touch."""
     return max(abs(a[0] - b[0]), abs(a[1] - b[1]))
 
 
 class Environment:
-    """5x5 kitchen with a human and a robot, each in one cell."""
-
     def __init__(self, human: Human) -> None:
         self.human = human
         self.robot_cell: Cell = C.ROBOT_START
-        self.fetch_left = 0        # steps left of the current Fetch
-        self.confirmed = False     # person said "yes, help me"
+        self.task = C.WAIT        # the action currently being executed
+        self.task_left = 0        # steps left of a multi-step action
+        self.confirmed = False    # the person answered "yes" to Ask
+        self.unsafe = False       # last action was a Fetch at a hot pot
 
-    def context(self) -> dict:
-        """What the robot knows about the world (smart stove, positions)."""
-        stove_on = self.human.state in (C.COOKING, C.NEEDS_HELP)
-        near = _dist(self.human.cell, C.STOVE_CELL) <= C.NEAR_STOVE_DIST
+    # ---------------------------------------------------------------- SENSE
+    def sense(self, obs: Observation) -> dict:
+        """Robot-side readings that do not reveal the person's intent.
+
+        Pot and board state come from a smart stove and a board camera,
+        so they are reliable. Whether the person is near the pot is taken
+        from the noisy zone observation; during a dropout the robot
+        assumes the worst (near the pot).
+        """
         return {
-            "stove_on": stove_on,
-            "human_near_stove": near,
-            "hazard": stove_on and near,
+            "pot_on": self.human.pot_on,
+            "food_on_board": self.human.food_on_board,
+            "person_near_pot": obs is None or obs["zone"] == C.POT,
             "confirmed": self.confirmed,
-            "fetch_left": self.fetch_left,
-            "human_cell": self.human.cell,
-            "robot_cell": self.robot_cell,
+            "task": self.task,
+            "task_left": self.task_left,
         }
 
-    def _move(self, toward: bool) -> None:
-        """One step toward / away from the person (never onto them)."""
-        r, c = self.robot_cell
-        options = [(r + dr, c + dc)
-                   for dr, dc in ((0, 0), (1, 0), (-1, 0), (0, 1), (0, -1))]
-        options = [p for p in options
-                   if 0 <= p[0] < C.GRID_SIZE and 0 <= p[1] < C.GRID_SIZE
-                   and p != self.human.cell]
-        pick = min if toward else max
-        self.robot_cell = pick(options,
-                               key=lambda p: _dist(p, self.human.cell))
-
-    def apply(self, action: int) -> tuple:
-        """Execute the action -> (reward, new_context)."""
-        s = self.human.state
-        hazard = self.context()["hazard"]
-        reward = float(C.REWARD[s, action])
+    # ------------------------------------------------------------------ ACT
+    def apply(self, action: int) -> float:
+        """Execute one step of the action -> reward of this step."""
+        human, state = self.human, self.human.state
+        reward, self.unsafe = 0.0, False
+        if self.task_left == 0:                 # a new action starts
+            self.task = action
+            self.task_left = C.DURATION.get(action, 1)
+            reward = self._reward(state, action)
+        self.task_left -= 1
+        done = self.task_left == 0
 
         if action == C.FETCH:
-            if self.fetch_left == 0:               # a new Fetch begins
-                self.fetch_left = C.FETCH_STEPS
-                if hazard and not self.confirmed:  # autonomous = unsafe
-                    reward += C.STOVE_PENALTY
-            else:                                  # continuing: cost only
-                reward = -C.ACTION_COST
-            self.fetch_left -= 1
-            if self.fetch_left == 0:               # Fetch completed
-                if s == C.NEEDS_HELP:
-                    self.human.receive_help()
+            if not done:                        # step 1: get the item
+                self._go_next_to(C.LOCATIONS["Fridge"])
+            else:                               # step 2: hand it over
+                self._go_next_to(human.cell)
+                if state == C.NEEDS_HELP:
+                    human.receive_help()
                 self.confirmed = False
-            self._move(toward=True)
-        else:
-            self.fetch_left = 0
-            # Asking a person who needs help yields a "yes".
-            self.confirmed = (action == C.ASK and s == C.NEEDS_HELP)
-            if action == C.ASK:
-                self._move(toward=True)
-            elif action == C.KEEP_DISTANCE:
-                self._move(toward=False)
-        return reward, self.context()
+        elif action == C.CHOP:
+            self._go_next_to(C.LOCATIONS["Board"])
+            if done and human.food_on_board:
+                human.food_chopped()
+        elif action == C.ASK:
+            self._step(toward=True)
+            self.confirmed = state == C.NEEDS_HELP  # they answer "yes"
+        elif dist(self.robot_cell, human.cell) <= C.PERSONAL_SPACE:
+            self._step(toward=False)            # Wait: give them space
+        if action not in (C.ASK, C.FETCH):
+            self.confirmed = False
+        return reward
+
+    def _reward(self, state: int, action: int) -> float:
+        """R[state, action], plus a large penalty for an unsafe Fetch."""
+        self.unsafe = (action == C.FETCH and self.human.pot_on
+                       and self.human.zone == C.POT and not self.confirmed)
+        return float(C.REWARD[state, action]) + C.POT_PENALTY * self.unsafe
+
+    # ------------------------------------------------------------- movement
+    def _step(self, toward: bool) -> None:
+        """Move one cell toward / away from the person; never onto them.
+
+        Approaching stops once adjacent, so Ask respects personal space.
+        """
+        here, person = self.robot_cell, self.human.cell
+        if toward and dist(here, person) <= C.PERSONAL_SPACE:
+            return
+        options = [c for c in ALL_CELLS if dist(c, here) <= 1 and c != person]
+        pick = min if toward else max
+        self.robot_cell = pick(options, key=lambda c: dist(c, person))
+
+    def _go_next_to(self, target: Cell) -> None:
+        """Stand on the target cell, or as close as possible if occupied."""
+        free = [c for c in ALL_CELLS if c != self.human.cell]
+        self.robot_cell = min(free, key=lambda c: dist(c, target))

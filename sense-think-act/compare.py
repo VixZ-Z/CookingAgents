@@ -1,9 +1,11 @@
-"""Compare three robots over many seeds.
+"""Compare robot variants over many random seeds.
 
     python compare.py
 
-(a) observation-only rule, (b) static HMM + QMDP, (c) adaptive HMM + QMDP.
-Belief accuracy is always measured on the HMM belief (the rule ignores it).
+(a) rules on raw observations, no belief
+(b) static HMM + QMDP (transition matrix never updated)
+(c) adaptive HMM + QMDP (the full robot)
+(d) adaptive HMM + QMDP without the safety rule
 """
 import numpy as np
 
@@ -12,41 +14,54 @@ from main import run_episode
 
 N_SEEDS = 100
 VARIANTS = {
-    "(a) obs-only rule": {"adaptive": False, "use_belief": False},
-    "(b) static HMM+QMDP": {"adaptive": False, "use_belief": True},
-    "(c) adaptive HMM+QMDP": {"adaptive": True, "use_belief": True},
+    "(a) observation rules": {"adaptive": False, "use_belief": False},
+    "(b) static HMM": {"adaptive": False},
+    "(c) adaptive HMM": {"adaptive": True},
+    "(d) (c) w/o safety": {"adaptive": True, "safety": False},
 }
+BELIEF_KEYS = ["belief_cooking", "belief_needshelp", "belief_resting"]
 
 
-def metrics(rows: list) -> dict:
-    """Per-episode metrics."""
-    belief_keys = ["belief_cooking", "belief_needshelp", "belief_resting"]
-    hits = [int(np.argmax([r[k] for k in belief_keys]) == r["true_idx"])
-            for r in rows]
+def metrics(rows: list, use_belief: bool) -> dict:
+    """Per-episode metrics (see the printed legend)."""
+    late = [r for r in rows if r["step"] >= C.ROUTINE_CHANGE_STEP]
+    hits = [np.argmax([r[k] for k in BELIEF_KEYS]) == r["true_idx"]
+            for r in late]
     needs = [r["true_idx"] == C.NEEDS_HELP for r in rows]
-    onsets = sum(1 for i, n in enumerate(needs)
-                 if n and (i == 0 or not needs[i - 1]))
-    acted = [r["action_idx"] in (C.ASK, C.FETCH) for r in rows]
+    onsets = sum(n and (i == 0 or not needs[i - 1])
+                 for i, n in enumerate(needs))
+    new = [r for r in rows if not r["continuing"]]
+    intrusive = sum(
+        (r["action_idx"] in (C.ASK, C.FETCH) and r["true_idx"] != C.NEEDS_HELP)
+        or (r["action_idx"] == C.CHOP and r["true_idx"] == C.COOKING)
+        for r in new)
     return {
-        "accuracy": float(np.mean(hits)),
-        # mean number of steps spent in NeedsHelp per episode of need
-        "latency": sum(needs) / onsets if onsets else np.nan,
-        "intrusions": sum(a and not n for a, n in zip(acted, needs)),
-        "asks": sum(r["action_idx"] == C.ASK for r in rows),
+        "reward": sum(r["reward"] for r in rows),
+        "accuracy": np.mean(hits) if use_belief else np.nan,
+        "latency": sum(needs) / max(onsets, 1),
+        "intrusions": intrusive,
+        "unsafe": sum(r["unsafe_fetch"] for r in rows),
     }
 
 
 def main() -> None:
-    print(f"{'variant':<24} {'accuracy':>8} {'latency':>8} "
-          f"{'intrusions':>10} {'asks':>6}")
+    cols = ["reward", "accuracy", "latency", "intrusions", "unsafe"]
+    print(f"{'variant':<24}" + "".join(f"{c:>11}" for c in cols))
     for name, kwargs in VARIANTS.items():
-        results = [metrics(run_episode(seed, **kwargs))
+        use_belief = kwargs.get("use_belief", True)
+        results = [metrics(run_episode(seed, **kwargs), use_belief)
                    for seed in range(N_SEEDS)]
-        mean = {k: np.nanmean([m[k] for m in results]) for k in results[0]}
-        print(f"{name:<24} {mean['accuracy']:>8.2f} {mean['latency']:>8.2f}"
-              f" {mean['intrusions']:>10.2f} {mean['asks']:>6.2f}")
-    print(f"(means over {N_SEEDS} seeds; latency = steps in NeedsHelp "
-          "per need episode, lower is better)")
+        means = [np.mean([m[c] for m in results]) for c in cols]
+        print(f"{name:<24}" + "".join(
+            f"{'-':>11}" if np.isnan(v) else f"{v:>11.2f}" for v in means))
+    print(f"\nMeans over {N_SEEDS} seeds.\n"
+          "reward     total reward per episode (higher is better)\n"
+          "accuracy   belief argmax == true state, after the routine change\n"
+          "latency    steps spent in NeedsHelp per need episode (lower "
+          "is better)\n"
+          "intrusions Ask/Fetch when no help was needed, or Chop while\n"
+          "           the person was still cooking\n"
+          "unsafe     autonomous Fetch next to a hot pot")
 
 
 if __name__ == "__main__":
