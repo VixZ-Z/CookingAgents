@@ -5,6 +5,14 @@ a 5x5 kitchen, and only steps in when it is needed. Pure Python (numpy +
 matplotlib), Python 3.10+.
 
 ## Run
+One command sets up a virtual environment, installs the requirements and
+runs all four scripts:
+```
+powershell -ExecutionPolicy Bypass -File run.ps1   # Windows
+bash run.sh                                        # Linux / macOS
+```
+
+Or step by step (Windows shown; on Linux use `source .venv/bin/activate`):
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
